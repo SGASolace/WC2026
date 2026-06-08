@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* enable class-based dark variant used by the in-app theme toggle */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html, body, #root { margin: 0; min-height: 100%; background: #070b0a; }
