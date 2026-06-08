@@ -25,6 +25,25 @@ const money = (n) => `${Math.round(n).toLocaleString()} Coins`;
 const uid = () => Math.random().toString(36).slice(2, 9);
 const betCode = () => "WC2026-" + Math.floor(100000 + Math.random() * 899999);
 
+/* ---------- match timing & lock (picks close 15 min before kickoff) ---------- */
+const LOCK_MIN = 15;
+const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function kickoffMs(m) {
+  // m.date "Jun 12, 2026", m.time "01:00" — fixtures are in GMT+6 (Dhaka)
+  const [mon, day, year] = m.date.replace(",", "").split(/\s+/);
+  const mm = String((MONTHS[mon] ?? 0) + 1).padStart(2, "0");
+  const dd = String(parseInt(day, 10)).padStart(2, "0");
+  return new Date(`${year}-${mm}-${dd}T${m.time}:00+06:00`).getTime();
+}
+const lockMs = (m) => kickoffMs(m) - LOCK_MIN * 60 * 1000;
+const isLocked = (m, now = Date.now()) => now >= lockMs(m);
+function lockCountdown(m, now = Date.now()) {
+  const diff = lockMs(m) - now;
+  if (diff <= 0) return null;
+  const h = Math.floor(diff / 3.6e6), mn = Math.floor((diff % 3.6e6) / 6e4);
+  return h > 0 ? `${h}h ${mn}m` : `${mn}m`;
+}
+
 /* ---------- data access (Supabase; shared across all users) ---------- */
 const db = {
   async fetchBets() {
@@ -220,6 +239,9 @@ export default function App() {
   const [activeMatch, setActiveMatch] = useState(null);
   const [slip, setSlip] = useState([]);
   const [toast, setToast] = useState(null);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
   const showToast = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2600); };
 
@@ -296,9 +318,9 @@ export default function App() {
               <AdminPanel bets={bets} results={results} settleMatch={settleMatch} showToast={showToast} />
             ) : (
               <>
-                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} />}
+                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} now={now} />}
                 {tab === "matches" && activeMatch && (
-                  <MatchDetail match={activeMatch} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} />
+                  <MatchDetail match={activeMatch} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
                 {tab === "mybets" && <MyBets bets={bets.filter((b) => b.userId === session.user.id)} />}
                 {tab === "board" && <Leaderboard bets={bets} me={profile.nickname} />}
@@ -455,7 +477,7 @@ function Header({ user, dark, setDark, onLogout }) {
 }
 
 /* ---------- Match list ---------- */
-function MatchList({ onOpen, results }) {
+function MatchList({ onOpen, results, now }) {
   const [q, setQ] = useState("");
   const grouped = useMemo(() => {
     const f = FIXTURES.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
@@ -481,6 +503,8 @@ function MatchList({ onOpen, results }) {
             <div className="grid gap-2.5 sm:grid-cols-2">
               {ms.map((m) => {
                 const settled = results[m.n];
+                const locked = !settled && isLocked(m, now);
+                const closing = !settled && !locked ? lockCountdown(m, now) : null;
                 return (
                   <button key={m.n} onClick={() => onOpen(m)}
                     className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-emerald-400/40 hover:bg-white/[0.06]">
@@ -488,6 +512,8 @@ function MatchList({ onOpen, results }) {
                       <div className="mb-1 flex items-center gap-2 text-[11px] text-stone-500">
                         <Clock className="h-3 w-3" /> {m.day} · {m.time}
                         {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-300">SETTLED {settled.ft.h}–{settled.ft.a}</span>}
+                        {locked && <span className="rounded bg-rose-500/20 px-1.5 py-0.5 font-semibold text-rose-300">🔒 LOCKED</span>}
+                        {closing && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">closes in {closing}</span>}
                       </div>
                       <div className="flex items-center gap-2 text-sm font-semibold">
                         <span className="text-lg">{m.hf}</span><span className="truncate">{m.home}</span>
@@ -509,13 +535,16 @@ function MatchList({ onOpen, results }) {
 }
 
 /* ---------- Match detail (markets) ---------- */
-function MatchDetail({ match, onBack, slip, setSlip, results, showToast }) {
+function MatchDetail({ match, onBack, slip, setSlip, results, showToast, now }) {
   const markets = useMemo(() => buildMarkets(match), [match]);
   const settled = results[match.n];
+  const locked = isLocked(match, now);
+  const closing = !settled && !locked ? lockCountdown(match, now) : null;
   const inSlip = (selId) => slip.some((s) => s.matchId === match.n && s.selId === selId);
 
   const toggle = (mk, s) => {
     if (settled) { showToast("This match is already settled", "err"); return; }
+    if (locked) { showToast("Picks are closed for this match", "err"); return; }
     setSlip((prev) => {
       const exists = prev.find((x) => x.matchId === match.n && x.selId === s.id);
       if (exists) return prev.filter((x) => !(x.matchId === match.n && x.selId === s.id));
@@ -539,20 +568,24 @@ function MatchDetail({ match, onBack, slip, setSlip, results, showToast }) {
           <div className="text-center">
             <div className="font-display text-3xl text-amber-300">VS</div>
             <div className="mt-1 text-[11px] text-stone-400">{match.day} {match.date}</div>
-            <div className="text-[11px] text-stone-400">Kickoff {match.time} · picks close 15 min prior</div>
+            <div className="text-[11px] text-stone-400">Kickoff {match.time} (GMT+6) · picks close {LOCK_MIN} min before</div>
           </div>
           <Team flag={match.af} name={match.away} />
         </div>
-        {settled && (
+        {settled ? (
           <div className="mt-4 rounded-xl bg-black/30 p-3 text-center text-sm">
             <span className="font-semibold text-emerald-300">Final: {match.home} {settled.ft.h}–{settled.ft.a} {match.away}</span>
           </div>
-        )}
+        ) : locked ? (
+          <div className="mt-4 rounded-xl bg-rose-500/15 p-3 text-center text-sm font-semibold text-rose-300">🔒 Picks are closed for this match</div>
+        ) : closing ? (
+          <div className="mt-4 rounded-xl bg-amber-500/15 p-3 text-center text-sm font-semibold text-amber-300">Picks close in {closing}</div>
+        ) : null}
       </div>
 
       <div className="space-y-3">
         {markets.map((mk) => (
-          <MarketCard key={mk.key} mk={mk} inSlip={inSlip} toggle={toggle} disabled={!!settled} />
+          <MarketCard key={mk.key} mk={mk} inSlip={inSlip} toggle={toggle} disabled={!!settled || locked} />
         ))}
       </div>
     </div>
@@ -629,6 +662,10 @@ function BetSlip({ slip, setSlip, user, placeBet, showToast, setTab, setActiveMa
       if (s.stake < RULES.min) return `Min stake is ${money(RULES.min)} per selection`;
       if (s.stake > RULES.max) return `Max stake is ${money(RULES.max)} per selection`;
     }
+    const lockedMatch = [...new Set(slip.map((s) => s.matchId))]
+      .map((id) => FIXTURES.find((f) => f.n === id))
+      .find((f) => f && isLocked(f));
+    if (lockedMatch) return `Picks closed for ${lockedMatch.home} v ${lockedMatch.away} — remove it to continue`;
     return null;
   };
 
