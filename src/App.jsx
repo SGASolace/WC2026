@@ -22,6 +22,35 @@ const toDecimal = (frac) => {
   return b ? 1 + a / b : 2;
 };
 const money = (n) => `${Math.round(n).toLocaleString()} Coins`;
+
+/* ---------- wallet accounting ---------- */
+// Bonus tiers applied to each deposit amount:
+//   = 10,000           → 10%
+//   > 10,000 & < 15,000 → 12%
+//   ≥ 15,000 & < 20,000 → 15%
+//   ≥ 20,000           → 20%
+//   < 10,000           → 0%
+function bonusPct(amount) {
+  if (amount >= 20000) return 20;
+  if (amount >= 15000) return 15;
+  if (amount > 10000) return 12;
+  if (amount === 10000) return 10;
+  return 0;
+}
+// deposit + bonus credited by admin; every stake leaves the balance; won picks return their payout.
+function walletOf(profile, myBets) {
+  const deposit = Number(profile?.deposit || 0);
+  const bonus = Number(profile?.bonus || 0);
+  let inBets = 0, won = 0, lost = 0, staked = 0;
+  (myBets || []).forEach((b) => {
+    staked += b.totalStake;
+    if (b.status === "open") inBets += b.totalStake;
+    else if (b.status === "won") won += b.payout || 0;
+    else if (b.status === "lost") lost += b.totalStake;
+  });
+  const net = deposit + bonus - staked + won; // current spendable balance
+  return { deposit, bonus, inBets, won, lost, net };
+}
 const uid = () => Math.random().toString(36).slice(2, 9);
 const betCode = () => "WC2026-" + Math.floor(100000 + Math.random() * 899999);
 
@@ -88,6 +117,25 @@ const db = {
   async saveConfig(matchNo, config, userId) {
     const { error } = await supabase.from("match_config")
       .upsert({ match_no: matchNo, config, updated_by: userId, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  },
+  async fetchProfiles() {
+    const { data, error } = await supabase.from("profiles").select("id,nickname,full_name,is_admin,deposit,bonus");
+    if (error) throw error;
+    return data || [];
+  },
+  async creditPlayer(id, deposit, bonus) {
+    const { error } = await supabase.from("profiles").update({ deposit, bonus }).eq("id", id);
+    if (error) throw error;
+  },
+  async fetchTransactions() {
+    const { data, error } = await supabase.from("transactions").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+  async addTransaction(t, userId) {
+    const { error } = await supabase.from("transactions")
+      .insert({ user_id: t.user_id, nickname: t.nickname, deposit: t.deposit, bonus: t.bonus, created_by: userId });
     if (error) throw error;
   },
 };
@@ -254,6 +302,74 @@ function evaluateItem(item, R) {
 }
 const stripPlayer = (p) => p.trim().toLowerCase();
 
+/* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
+const matchName = (id) => { const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
+const fmtN = (n) => Math.round(n).toLocaleString();
+
+function downloadFile(name, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportPicksCSV(bets, filename) {
+  const head = ["Player", "Slip ID", "Placed", "Match", "Category", "Selection", "Odds", "Stake (Coins)", "Pick Result", "Slip Status", "Slip Payout (Coins)"];
+  const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [head.map(esc).join(",")];
+  bets.forEach((b) => b.items.forEach((it) => {
+    lines.push([b.user, b.code, new Date(b.ts).toLocaleString(), matchName(it.matchId), it.marketTitle,
+      it.label, it.oddsStr, it.stake, it.status, b.status, b.payout || 0].map(esc).join(","));
+  }));
+  downloadFile(filename, "\ufeff" + lines.join("\n"), "text/csv;charset=utf-8");
+}
+
+function picksHTML(bets, title, byPlayer) {
+  const groups = {};
+  if (byPlayer) bets.forEach((b) => (groups[b.user] ||= []).push(b));
+  else groups._ = bets;
+  let body = "";
+  Object.entries(groups).forEach(([player, pbets]) => {
+    if (byPlayer) body += `<h2>${player}</h2>`;
+    const byMatch = {};
+    pbets.forEach((b) => b.items.forEach((it) => (byMatch[it.matchId] ||= []).push(it)));
+    const ids = Object.keys(byMatch).sort((a, b) => a - b);
+    if (!ids.length) { body += `<p class="empty">No picks.</p>`; return; }
+    ids.forEach((mid) => {
+      body += `<h3>${matchName(+mid)}</h3><table><thead><tr><th>Category</th><th>Selection</th><th>Odds</th><th>Stake</th><th>Result</th></tr></thead><tbody>`;
+      byMatch[mid].forEach((it) => {
+        body += `<tr><td>${it.marketTitle}</td><td>${it.label}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td></tr>`;
+      });
+      body += `</tbody></table>`;
+    });
+  });
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#13211c;padding:22px;max-width:820px;margin:auto}
+    h1{font-size:19px;margin:0 0 3px;color:#0b3d2e}
+    .sub{color:#6b7a74;font-size:11px;margin-bottom:14px}
+    h2{font-size:15px;margin:18px 0 6px;color:#0e7c5a;border-bottom:2px solid #0e7c5a;padding-bottom:3px}
+    h3{font-size:12.5px;margin:11px 0 3px;color:#0b3d2e}
+    table{width:100%;border-collapse:collapse;margin-bottom:6px;font-size:11px}
+    th{background:#0b3d2e;color:#fff;text-align:left;padding:5px 7px}
+    td{border-bottom:1px solid #e2e8e4;padding:4px 7px}
+    .s-won{color:#0e7c5a;font-weight:700}.s-lost{color:#c0392b}.empty{color:#6b7a74;font-size:11px}
+    @media print{@page{margin:12mm}}
+  </style></head><body>
+    <h1>🏆 SGA · FIFA WC 2026 — ${title}</h1>
+    <div class="sub">Generated ${new Date().toLocaleString()} · Coins are virtual · Play for fun</div>
+    ${body || '<p class="empty">No picks yet.</p>'}
+  </body></html>`;
+}
+
+function printPicks(bets, title, byPlayer) {
+  const w = window.open("", "_blank");
+  if (!w) { alert("Please allow pop-ups for this site to download the PDF, then try again."); return; }
+  w.document.write(picksHTML(bets, title, byPlayer));
+  w.document.close(); w.focus();
+  setTimeout(() => w.print(), 500);
+}
+
 /* ============================================================================
    UI
    ============================================================================ */
@@ -271,6 +387,8 @@ export default function App() {
   const [bets, setBets] = useState([]);
   const [results, setResults] = useState({});
   const [configs, setConfigs] = useState({}); // match_no -> { players, odds }
+  const [players, setPlayers] = useState([]); // all profiles (for admin + wallet)
+  const [txns, setTxns] = useState([]); // coin transactions (credits)
   const [tab, setTab] = useState("matches");
   const [activeMatch, setActiveMatch] = useState(null);
   const [slip, setSlip] = useState([]);
@@ -301,8 +419,10 @@ export default function App() {
   const refresh = useCallback(async () => {
     if (!hasSupabase || !session) return;
     try {
-      const [b, r, c] = await Promise.all([db.fetchBets(), db.fetchResults(), db.fetchConfigs()]);
-      setBets(b); setResults(r); setConfigs(c);
+      const [b, r, c, ps, tx] = await Promise.all([db.fetchBets(), db.fetchResults(), db.fetchConfigs(), db.fetchProfiles(), db.fetchTransactions()]);
+      setBets(b); setResults(r); setConfigs(c); setPlayers(ps); setTxns(tx);
+      const mine = ps.find((p) => p.id === session.user.id);
+      if (mine) setProfile((prev) => ({ ...prev, ...mine }));
     } catch (e) { console.error(e); }
   }, [session]);
 
@@ -314,12 +434,19 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "bets" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "results" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "match_config" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, refresh)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [session, refresh]);
 
   const placeBet = async (bet) => { await db.insertBet(bet, session.user.id); await refresh(); };
   const saveConfig = async (matchNo, config) => { await db.saveConfig(matchNo, config, session.user.id); await refresh(); };
+  const creditPlayer = async (player, addDeposit, addBonus) => {
+    await db.creditPlayer(player.id, Number(player.deposit || 0) + addDeposit, Number(player.bonus || 0) + addBonus);
+    await db.addTransaction({ user_id: player.id, nickname: player.nickname, deposit: addDeposit, bonus: addBonus }, session.user.id);
+    await refresh();
+  };
 
   const settleMatch = async (matchNo, R0) => {
     const match = FIXTURES.find((f) => f.n === matchNo);
@@ -347,6 +474,8 @@ export default function App() {
 
   const role = profile.is_admin ? "admin" : "player";
   const user = { nickname: profile.nickname, role };
+  const myBets = bets.filter((b) => b.userId === session.user.id);
+  const wallet = walletOf(profile, myBets);
 
   return (
     <div className={dark ? "dark" : ""}>
@@ -357,14 +486,14 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} settleMatch={settleMatch} saveConfig={saveConfig} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} saveConfig={saveConfig} creditPlayer={creditPlayer} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} now={now} />}
                 {tab === "matches" && activeMatch && (
                   <MatchDetail match={activeMatch} config={configs[activeMatch.n]} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
-                {tab === "mybets" && <MyBets bets={bets.filter((b) => b.userId === session.user.id)} />}
+                {tab === "mybets" && <MyBets bets={myBets} wallet={wallet} nickname={profile.nickname} txns={txns} />}
                 {tab === "board" && <Leaderboard bets={bets} me={profile.nickname} />}
               </>
             )}
@@ -372,7 +501,7 @@ export default function App() {
 
           {role === "player" && (
             <>
-              <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
+              <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
               <BottomNav tab={tab} setTab={(t) => { setTab(t); setActiveMatch(null); }} slipCount={slip.length} />
             </>
           )}
@@ -683,7 +812,7 @@ function MarketCard({ mk, inSlip, toggle, disabled }) {
 }
 
 /* ---------- Pick slip ---------- */
-function BetSlip({ slip, setSlip, user, placeBet, showToast, setTab, setActiveMatch }) {
+function BetSlip({ slip, setSlip, user, placeBet, available, showToast, setTab, setActiveMatch }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [placed, setPlaced] = useState(null);
@@ -708,6 +837,7 @@ function BetSlip({ slip, setSlip, user, placeBet, showToast, setTab, setActiveMa
       .map((id) => FIXTURES.find((f) => f.n === id))
       .find((f) => f && isLocked(f));
     if (lockedMatch) return `Picks closed for ${lockedMatch.home} v ${lockedMatch.away} — remove it to continue`;
+    if (totalStake > available) return `Not enough Coins — you have ${money(available)}. Ask the admin to add more.`;
     return null;
   };
 
@@ -786,6 +916,7 @@ function BetSlip({ slip, setSlip, user, placeBet, showToast, setTab, setActiveMa
             <div className="border-t border-white/10 bg-black/20 p-4">
               <div className="mb-3 space-y-1 text-sm">
                 <Row k="Categories" v={`${categories} / min ${RULES.minCategories}`} />
+                <Row k="Available" v={money(available)} />
                 <Row k="Total Stake" v={money(totalStake)} />
                 <Row k="Potential Return" v={money(potential)} hi />
               </div>
@@ -817,27 +948,71 @@ const Row = ({ k, v, hi, mono }) => (
   </div>
 );
 
-/* ---------- My Picks ---------- */
-function MyBets({ bets }) {
+/* ---------- My Picks + Wallet ---------- */
+function MyBets({ bets, wallet, nickname, txns }) {
   const [f, setF] = useState("all");
+  const [showHist, setShowHist] = useState(false);
   const filtered = bets.filter((b) => f === "all" || b.status === f);
-  const stats = bets.reduce((a, b) => {
-    a.staked += b.totalStake;
-    if (b.status === "won") { a.won++; a.returns += b.payout || 0; }
-    if (b.status === "lost") a.lost++;
-    if (b.status === "open") a.open++;
-    return a;
-  }, { staked: 0, returns: 0, won: 0, lost: 0, open: 0 });
+
+  const ledger = useMemo(() => {
+    const rows = [];
+    (txns || []).forEach((t) => rows.push({
+      date: t.created_at, kind: "credit", label: "Coins added by admin",
+      sub: `Deposit ${fmtN(t.deposit)}${Number(t.bonus) ? ` + ${fmtN(t.bonus)} bonus` : ""}`,
+      delta: Number(t.deposit) + Number(t.bonus),
+    }));
+    bets.forEach((b) => {
+      rows.push({ date: b.ts, kind: "stake", label: `Pick ${b.code}`, sub: `${b.items.length} selections placed`, delta: -b.totalStake });
+      if (b.status === "won") rows.push({ date: b.ts, kind: "win", label: `Won ${b.code}`, sub: "Returned to balance", delta: b.payout || 0 });
+    });
+    return rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [txns, bets]);
 
   return (
     <div>
-      <SectionTitle icon={<Receipt className="h-5 w-5" />} title="My Picks" sub={`${bets.length} submitted`} />
-      <div className="mb-4 grid grid-cols-4 gap-2">
-        <Stat label="Staked" v={money(stats.staked)} />
-        <Stat label="Returns" v={money(stats.returns)} good />
-        <Stat label="Won" v={stats.won} good />
-        <Stat label="Open" v={stats.open} />
+      <SectionTitle icon={<Wallet className="h-5 w-5" />} title="My Wallet" sub="Coins are virtual · provided by the admin" />
+      <div className="mb-3 grid grid-cols-3 gap-2">
+        <Stat label="Deposit" v={money(wallet.deposit)} />
+        <Stat label="Bonus" v={money(wallet.bonus)} good />
+        <Stat label="In Bets" v={money(wallet.inBets)} />
+        <Stat label="Won" v={money(wallet.won)} good />
+        <Stat label="Lost" v={money(wallet.lost)} />
+        <Stat label="Net Balance" v={money(wallet.net)} good={wallet.net >= 0} />
       </div>
+
+      <button onClick={() => setShowHist(!showHist)}
+        className="mb-4 flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-stone-300">
+        <span className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-300" /> Transaction History ({ledger.length})</span>
+        <ChevronRight className={`h-4 w-4 transition ${showHist ? "rotate-90" : ""}`} />
+      </button>
+      {showHist && (
+        <div className="mb-4 space-y-1.5">
+          {ledger.length === 0 && <p className="py-4 text-center text-xs text-stone-500">No transactions yet.</p>}
+          {ledger.map((r, i) => (
+            <div key={i} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-2.5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs font-semibold">
+                  <span className={`h-1.5 w-1.5 rounded-full ${r.kind === "credit" ? "bg-sky-400" : r.kind === "win" ? "bg-emerald-400" : "bg-stone-500"}`} />
+                  {r.label}
+                </div>
+                <div className="text-[11px] text-stone-500">{r.sub} · {new Date(r.date).toLocaleString()}</div>
+              </div>
+              <div className={`shrink-0 text-sm font-bold tabular-nums ${r.delta >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                {r.delta >= 0 ? "+" : "−"}{fmtN(Math.abs(r.delta))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-4 flex items-center justify-between">
+        <SectionTitle icon={<Receipt className="h-5 w-5" />} title="My Picks" sub={`${bets.length} submitted`} />
+        <button onClick={() => printPicks(bets, `${nickname} — My Picks`, false)}
+          className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <Receipt className="h-3.5 w-3.5" /> Download PDF
+        </button>
+      </div>
+
       <div className="mb-3 flex gap-1.5 overflow-x-auto">
         {["all", "open", "won", "lost"].map((k) => (
           <button key={k} onClick={() => setF(k)}
@@ -922,8 +1097,8 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, settleMatch, saveConfig, showToast }) {
-  const [mode, setMode] = useState("settle"); // settle | manage
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, saveConfig, creditPlayer, showToast }) {
+  const [mode, setMode] = useState("settle"); // settle | manage | players
   const [pick, setPick] = useState(null);
   const totals = bets.reduce((a, b) => { a.stake += b.totalStake; if (b.status === "won") a.payout += b.payout || 0; return a; }, { stake: 0, payout: 0 });
   const switchMode = (m) => { setMode(m); setPick(null); };
@@ -931,20 +1106,31 @@ function AdminPanel({ bets, results, configs, settleMatch, saveConfig, showToast
   return (
     <div>
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Players" v={new Set(bets.map((b) => b.user)).size} />
+        <Stat label="Players" v={players.filter((p) => !p.is_admin).length} />
         <Stat label="Total Entries" v={bets.length} />
         <Stat label="Total Stakes" v={money(totals.stake)} />
         <Stat label="Total Payouts" v={money(totals.payout)} good />
       </div>
-      <div className="mb-4 grid grid-cols-2 gap-2">
+      <div className="mb-3 grid grid-cols-2 gap-2">
         <Stat label="Settled Matches" v={Object.keys(results).length} />
         <Stat label="Pool P/L" v={money(totals.stake - totals.payout)} good={totals.stake - totals.payout >= 0} />
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-black/30 p-1">
-        {[["settle", "Settle Results", Settings], ["manage", "Odds & Players", ListChecks]].map(([k, lbl, Icon]) => (
+      <div className="mb-4 flex gap-2">
+        <button onClick={() => exportPicksCSV(bets, "SGA_WC2026_all_picks.csv")}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <BarChart3 className="h-3.5 w-3.5" /> Export Picks (Excel)
+        </button>
+        <button onClick={() => printPicks(bets, "All Players — Picks", true)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <Receipt className="h-3.5 w-3.5" /> Export Picks (PDF)
+        </button>
+      </div>
+
+      <div className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-black/30 p-1">
+        {[["settle", "Settle", Settings], ["manage", "Odds & Players", ListChecks], ["players", "Coins", Wallet]].map(([k, lbl, Icon]) => (
           <button key={k} onClick={() => switchMode(k)}
-            className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition ${mode === k ? "bg-gradient-to-r from-amber-400 to-emerald-400 text-black" : "text-stone-400"}`}>
+            className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-semibold transition ${mode === k ? "bg-gradient-to-r from-amber-400 to-emerald-400 text-black" : "text-stone-400"}`}>
             <Icon className="h-4 w-4" /> {lbl}
           </button>
         ))}
@@ -959,7 +1145,7 @@ function AdminPanel({ bets, results, configs, settleMatch, saveConfig, showToast
             <SettleForm match={pick} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} showToast={showToast} />
           )}
         </>
-      ) : (
+      ) : mode === "manage" ? (
         <>
           <SectionTitle icon={<ListChecks className="h-5 w-5" />} title="Odds & Players" sub="Set player names and adjust odds per match — saved for everyone" />
           {!pick ? (
@@ -968,6 +1154,94 @@ function AdminPanel({ bets, results, configs, settleMatch, saveConfig, showToast
             <ManageForm match={pick} config={configs[pick.n]} onBack={() => setPick(null)} saveConfig={saveConfig} showToast={showToast} />
           )}
         </>
+      ) : (
+        <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+/* ---------- Admin: give coins to players ---------- */
+function PlayersPanel({ players, bets, txns, creditPlayer, showToast }) {
+  const list = players.filter((p) => !p.is_admin);
+  return (
+    <div>
+      <SectionTitle icon={<Wallet className="h-5 w-5" />} title="Players & Coins" sub="Credit Coins to a player — bonus is added automatically by deposit tier" />
+      <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-[11px] text-stone-400 sm:grid-cols-4">
+        <div><span className="font-bold text-emerald-300">10%</span> · exactly 10,000</div>
+        <div><span className="font-bold text-emerald-300">12%</span> · 10,001–14,999</div>
+        <div><span className="font-bold text-emerald-300">15%</span> · 15,000–19,999</div>
+        <div><span className="font-bold text-emerald-300">20%</span> · 20,000 and above</div>
+      </div>
+      {list.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No players have signed up yet.</p>}
+      <div className="space-y-2.5">
+        {list.map((p) => (
+          <PlayerCredit key={p.id} p={p} myBets={bets.filter((b) => b.userId === p.id)} myTxns={(txns || []).filter((t) => t.user_id === p.id)} creditPlayer={creditPlayer} showToast={showToast} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlayerCredit({ p, myBets, myTxns, creditPlayer, showToast }) {
+  const w = walletOf(p, myBets);
+  const [amt, setAmt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [showHist, setShowHist] = useState(false);
+  const a = Math.max(0, parseFloat(amt) || 0);
+  const pct = bonusPct(a);
+  const bonusCoins = a * pct / 100;
+
+  const add = async () => {
+    if (a <= 0) { showToast("Enter an amount", "err"); return; }
+    setBusy(true);
+    try {
+      await creditPlayer(p, a, bonusCoins);
+      showToast(`Added ${money(a)} (+${money(bonusCoins)} bonus) to ${p.nickname}`);
+      setAmt("");
+    } catch (e) { showToast(e.message || "Failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-bold">👤 {p.nickname} <span className="text-[11px] font-normal text-stone-500">{p.full_name}</span></div>
+        <div className="text-right"><div className="text-[10px] uppercase tracking-wide text-stone-500">Net Balance</div>
+          <div className={`font-display text-xl ${w.net >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(w.net)}</div></div>
+      </div>
+      <div className="mb-3 grid grid-cols-5 gap-1.5 text-center text-[10px]">
+        {[["Deposit", w.deposit], ["Bonus", w.bonus], ["In Bets", w.inBets], ["Won", w.won], ["Lost", w.lost]].map(([k, v]) => (
+          <div key={k} className="rounded-lg bg-black/20 px-1 py-1.5">
+            <div className="text-stone-500">{k}</div><div className="font-semibold text-white">{fmtN(v)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-end gap-2">
+        <label className="flex-1"><span className="mb-1 block text-[10px] text-stone-400">Add Coins (bonus auto-applied)</span>
+          <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="10000" className={ipt} /></label>
+        <button onClick={add} disabled={busy} className="rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
+          {busy ? "…" : "Add"}
+        </button>
+      </div>
+      {a > 0 &&
+        <p className="mt-1.5 text-[11px] text-emerald-300/80">
+          {pct > 0 ? `${pct}% bonus → ${money(a)} deposit + ${money(bonusCoins)} bonus = ${money(a + bonusCoins)} playable` : `No bonus (deposit under 10,000) → ${money(a)} playable`}
+        </p>}
+
+      <button onClick={() => setShowHist(!showHist)} className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-stone-400 hover:text-emerald-300">
+        <ChevronRight className={`h-3.5 w-3.5 transition ${showHist ? "rotate-90" : ""}`} /> Top-up history ({(myTxns || []).length})
+      </button>
+      {showHist && (
+        <div className="mt-2 space-y-1">
+          {(myTxns || []).length === 0 && <p className="text-[11px] text-stone-600">No top-ups yet.</p>}
+          {(myTxns || []).map((t) => (
+            <div key={t.id} className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-1.5 text-[11px]">
+              <span className="text-stone-400">{new Date(t.created_at).toLocaleString()}</span>
+              <span className="font-semibold text-emerald-300">+{fmtN(Number(t.deposit) + Number(t.bonus))} <span className="text-stone-500">({fmtN(t.deposit)}+{fmtN(t.bonus)})</span></span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
