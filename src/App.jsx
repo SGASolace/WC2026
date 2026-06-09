@@ -169,9 +169,12 @@ function buildMarkets(m, cfg = {}) {
       ] },
     { key: "specials", title: "Match Specials", mode: "multi", icon: "✨",
       selections: [
-        sel("cs", "Clean Sheet (either team)", "6/4", { flag: "cleanSheet" }),
-        sel("wfb", "Win From Behind", "5/1", { flag: "winFromBehind" }),
-        sel("bh", "Team Scores in Both Halves", "3/1", { flag: "bothHalves" }),
+        sel("csh", `${H} Clean Sheet`, "6/4", { sp: "cleanSheet", team: "H" }),
+        sel("csa", `${A} Clean Sheet`, "5/2", { sp: "cleanSheet", team: "A" }),
+        sel("wfbh", `${H} Win From Behind`, "5/1", { sp: "winFromBehind", team: "H" }),
+        sel("wfba", `${A} Win From Behind`, "8/1", { sp: "winFromBehind", team: "A" }),
+        sel("bhh", `${H} Score in Both Halves`, "3/1", { sp: "bothHalves", team: "H" }),
+        sel("bha", `${A} Score in Both Halves`, "9/2", { sp: "bothHalves", team: "A" }),
       ] },
     { key: "first_scorer", title: "First Goal Scorer", mode: "multi", icon: "🥇", searchable: true, selections: scorerSel("first") },
     { key: "anytime_scorer", title: "Anytime Goal Scorer", mode: "multi", icon: "⚽", searchable: true, selections: scorerSel("any") },
@@ -217,9 +220,10 @@ function buildMarkets(m, cfg = {}) {
         sel("c4", "4 Cards", "2/1", { c: { eq: 4 } }), sel("c5", "5 Cards", "4/1", { c: { eq: 5 } }),
         sel("c6", "6 Cards", "6/1", { c: { eq: 6 } }), sel("c8", "More than 7", "10/1", { c: { gt: 7 } }),
       ] },
-    { key: "own_goal", title: "Own Goal in Match", mode: "single", icon: "🥅",
+    { key: "own_goal", title: "Own Goal Market", mode: "multi", icon: "🥅",
       selections: [
-        sel("oy", "Yes", "9/1", { owngoal: true }), sel("on", "No", "1/6", { owngoal: false }),
+        sel("ogh", `${H} concede Own Goal`, "10/1", { og: "H" }),
+        sel("oga", `${A} concede Own Goal`, "10/1", { og: "A" }),
       ] },
   ];
 
@@ -249,8 +253,13 @@ function evaluateItem(item, R) {
       const r = ftH > ftA ? "H" : ftH < ftA ? "A" : "D";
       return meta.res === r;
     }
-    case "specials":
-      return !!R[meta.flag];
+    case "specials": {
+      const t = meta.team;
+      if (meta.sp === "cleanSheet") return t === "H" ? (ftA === 0) : (ftH === 0);
+      if (meta.sp === "winFromBehind") return t === "H" ? !!R.wfbH : !!R.wfbA;
+      if (meta.sp === "bothHalves") return t === "H" ? !!R.bhH : !!R.bhA;
+      return false;
+    }
     case "first_scorer": {
       const first = (R.scorers?.[0] || "").trim().toLowerCase();
       const known = R.knownScorers || [];
@@ -295,7 +304,7 @@ function evaluateItem(item, R) {
       return false;
     }
     case "own_goal":
-      return meta.owngoal === !!R.ownGoal;
+      return meta.og === "H" ? !!R.ownGoalH : !!R.ownGoalA;
     default:
       return false;
   }
@@ -305,6 +314,9 @@ const stripPlayer = (p) => p.trim().toLowerCase();
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
 const matchName = (id) => { const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
 const fmtN = (n) => Math.round(n).toLocaleString();
+const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
+// realized profit/loss for one selection: won slip → stake×(odds−1); lost slip → −stake; open → 0 (pending)
+const itemPL = (bet, it) => bet.status === "won" ? it.stake * (it.odds - 1) : bet.status === "lost" ? -it.stake : 0;
 
 function downloadFile(name, content, mime) {
   const blob = new Blob([content], { type: mime });
@@ -314,14 +326,45 @@ function downloadFile(name, content, mime) {
   a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function exportPicksCSV(bets, filename) {
-  const head = ["Player", "Slip ID", "Placed", "Match", "Category", "Selection", "Odds", "Stake (Coins)", "Pick Result", "Slip Status", "Slip Payout (Coins)"];
+// rows grouped by (player →) match, with a subtotal per match and a grand total
+function exportPicksCSV(bets, filename, byPlayer) {
+  const head = ["Player", "Match", "Category", "Selection", "Odds", "Stake (Coins)", "Pick Result", "Slip ID", "Slip Status", "Coins +/−"];
   const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = [head.map(esc).join(",")];
-  bets.forEach((b) => b.items.forEach((it) => {
-    lines.push([b.user, b.code, new Date(b.ts).toLocaleString(), matchName(it.matchId), it.marketTitle,
-      it.label, it.oddsStr, it.stake, it.status, b.status, b.payout || 0].map(esc).join(","));
-  }));
+  const groups = {};
+  if (byPlayer) bets.forEach((b) => (groups[b.user] ||= []).push(b));
+  else groups._ = bets;
+  let grand = 0;
+  Object.entries(groups).forEach(([player, pbets]) => {
+    const byMatch = {};
+    pbets.forEach((b) => b.items.forEach((it) => (byMatch[it.matchId] ||= []).push({ it, b })));
+    let playerTotal = 0;
+    Object.keys(byMatch).sort((a, b) => a - b).forEach((mid) => {
+      let sub = 0;
+      byMatch[mid].forEach(({ it, b }) => {
+        const pl = itemPL(b, it); sub += pl;
+        lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, it.label, it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
+      });
+      lines.push(["", matchName(+mid), "", "", "", "", "", "", "SUBTOTAL", Math.round(sub)].map(esc).join(","));
+      playerTotal += sub;
+    });
+    if (byPlayer) lines.push([player, "", "", "", "", "", "", "", "PLAYER TOTAL", Math.round(playerTotal)].map(esc).join(","));
+    grand += playerTotal;
+  });
+  lines.push(["", "", "", "", "", "", "", "", "TOTAL (ALL MATCHES)", Math.round(grand)].map(esc).join(","));
+  downloadFile(filename, "\ufeff" + lines.join("\n"), "text/csv;charset=utf-8");
+}
+
+function exportTransactionsCSV(txns, filename) {
+  const head = ["Date", "Player", "Deposit (Coins)", "Bonus (Coins)", "Total (Coins)"];
+  const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [head.map(esc).join(",")];
+  let d = 0, bo = 0;
+  txns.forEach((t) => {
+    d += Number(t.deposit); bo += Number(t.bonus);
+    lines.push([new Date(t.created_at).toLocaleString(), t.nickname, Math.round(t.deposit), Math.round(t.bonus), Math.round(Number(t.deposit) + Number(t.bonus))].map(esc).join(","));
+  });
+  lines.push(["", "TOTAL", Math.round(d), Math.round(bo), Math.round(d + bo)].map(esc).join(","));
   downloadFile(filename, "\ufeff" + lines.join("\n"), "text/csv;charset=utf-8");
 }
 
@@ -329,36 +372,48 @@ function picksHTML(bets, title, byPlayer) {
   const groups = {};
   if (byPlayer) bets.forEach((b) => (groups[b.user] ||= []).push(b));
   else groups._ = bets;
-  let body = "";
+  const plCell = (n) => `<td class="pl ${n >= 0 ? "pos" : "neg"}">${signed(n)}</td>`;
+  let body = "", grand = 0;
   Object.entries(groups).forEach(([player, pbets]) => {
     if (byPlayer) body += `<h2>${player}</h2>`;
     const byMatch = {};
-    pbets.forEach((b) => b.items.forEach((it) => (byMatch[it.matchId] ||= []).push(it)));
+    pbets.forEach((b) => b.items.forEach((it) => (byMatch[it.matchId] ||= []).push({ it, b })));
     const ids = Object.keys(byMatch).sort((a, b) => a - b);
     if (!ids.length) { body += `<p class="empty">No picks.</p>`; return; }
+    let playerTotal = 0;
     ids.forEach((mid) => {
-      body += `<h3>${matchName(+mid)}</h3><table><thead><tr><th>Category</th><th>Selection</th><th>Odds</th><th>Stake</th><th>Result</th></tr></thead><tbody>`;
-      byMatch[mid].forEach((it) => {
-        body += `<tr><td>${it.marketTitle}</td><td>${it.label}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td></tr>`;
+      body += `<h3>${matchName(+mid)}</h3><table><thead><tr><th>Category</th><th>Selection</th><th>Odds</th><th>Stake</th><th>Result</th><th>Coins +/−</th></tr></thead><tbody>`;
+      let sub = 0;
+      byMatch[mid].forEach(({ it, b }) => {
+        const pl = itemPL(b, it); sub += pl;
+        body += `<tr><td>${it.marketTitle}</td><td>${it.label}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(pl)}</tr>`;
       });
-      body += `</tbody></table>`;
+      body += `<tr class="sub"><td colspan="5">Match subtotal</td>${plCell(sub)}</tr></tbody></table>`;
+      playerTotal += sub;
     });
+    if (byPlayer) body += `<table><tbody><tr class="tot"><td colspan="5">${player} — total (all matches)</td>${plCell(playerTotal)}</tr></tbody></table>`;
+    grand += playerTotal;
   });
+  body += `<table><tbody><tr class="grand"><td colspan="5">TOTAL — all matches</td>${plCell(grand)}</tr></tbody></table>`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
-    body{font-family:Arial,Helvetica,sans-serif;color:#13211c;padding:22px;max-width:820px;margin:auto}
+    body{font-family:Arial,Helvetica,sans-serif;color:#13211c;padding:22px;max-width:860px;margin:auto}
     h1{font-size:19px;margin:0 0 3px;color:#0b3d2e}
-    .sub{color:#6b7a74;font-size:11px;margin-bottom:14px}
+    .sub-h{color:#6b7a74;font-size:11px;margin-bottom:14px}
     h2{font-size:15px;margin:18px 0 6px;color:#0e7c5a;border-bottom:2px solid #0e7c5a;padding-bottom:3px}
     h3{font-size:12.5px;margin:11px 0 3px;color:#0b3d2e}
     table{width:100%;border-collapse:collapse;margin-bottom:6px;font-size:11px}
     th{background:#0b3d2e;color:#fff;text-align:left;padding:5px 7px}
     td{border-bottom:1px solid #e2e8e4;padding:4px 7px}
+    .pl{text-align:right;font-weight:700}.pos{color:#0e7c5a}.neg{color:#c0392b}
     .s-won{color:#0e7c5a;font-weight:700}.s-lost{color:#c0392b}.empty{color:#6b7a74;font-size:11px}
+    tr.sub td{background:#f1f8f4;font-weight:700}
+    tr.tot td{background:#eef6ff;font-weight:700}
+    tr.grand td{background:#0b3d2e;color:#fff;font-weight:700;font-size:12px}
     @media print{@page{margin:12mm}}
   </style></head><body>
     <h1>🏆 SGA · FIFA WC 2026 — ${title}</h1>
-    <div class="sub">Generated ${new Date().toLocaleString()} · Coins are virtual · Play for fun</div>
-    ${body || '<p class="empty">No picks yet.</p>'}
+    <div class="sub-h">Generated ${new Date().toLocaleString()} · Coins +/− = net result per selection · Coins are virtual</div>
+    ${body}
   </body></html>`;
 }
 
@@ -394,6 +449,7 @@ export default function App() {
   const [slip, setSlip] = useState([]);
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
@@ -403,7 +459,10 @@ export default function App() {
   useEffect(() => {
     if (!hasSupabase) { setAuthReady(true); return; }
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -469,6 +528,7 @@ export default function App() {
 
   if (!hasSupabase) return <ConfigNeeded />;
   if (!authReady) return <Splash msg="Loading…" />;
+  if (recovery) return <ResetPassword showToast={showToast} onDone={() => setRecovery(false)} />;
   if (!session) return <Auth showToast={showToast} />;
   if (!profile) return <Splash msg="Setting up your profile…" />;
 
@@ -489,7 +549,7 @@ export default function App() {
               <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} saveConfig={saveConfig} creditPlayer={creditPlayer} showToast={showToast} />
             ) : (
               <>
-                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} now={now} />}
+                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} now={now} nickname={profile.nickname} />}
                 {tab === "matches" && activeMatch && (
                   <MatchDetail match={activeMatch} config={configs[activeMatch.n]} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
@@ -569,6 +629,17 @@ function Auth({ showToast }) {
     finally { setBusy(false); }
   };
 
+  const forgot = async () => {
+    if (!email.trim()) { showToast("Enter your email first, then tap Forgot password", "err"); return; }
+    setBusy(true); setNote("");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
+      if (error) throw error;
+      setNote("Password reset link sent — check your email, then follow the link to set a new password.");
+    } catch (e) { showToast(e.message || "Could not send reset email", "err"); }
+    finally { setBusy(false); }
+  };
+
   return (
     <Shell>
       <div className="w-full max-w-md">
@@ -599,6 +670,11 @@ function Auth({ showToast }) {
             {busy ? "Please wait…" : mode === "signup" ? "Create Account & Enter" : "Sign In"}
           </button>
           {note && <p className="mt-3 text-center text-[11px] text-emerald-300/80">{note}</p>}
+          {mode === "signin" && (
+            <button onClick={forgot} disabled={busy} className="mt-3 w-full text-center text-[11px] text-stone-400 hover:text-emerald-300 disabled:opacity-50">
+              Forgot password?
+            </button>
+          )}
         </div>
         <p className="mt-4 text-center text-[11px] text-stone-600">
           For a private group of friends · {money(RULES.min)}–{money(RULES.max)} per pick · Play for fun
@@ -615,7 +691,40 @@ const Field = ({ label, v, set, ph, type = "text" }) => (
   </label>
 );
 
-/* ---------- Header ---------- */
+/* ---------- Reset password (after clicking the email link) ---------- */
+function ResetPassword({ showToast, onDone }) {
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (pw.length < 6) { showToast("Password must be at least 6 characters", "err"); return; }
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) throw error;
+      showToast("Password updated — you're signed in");
+      onDone();
+    } catch (e) { showToast(e.message || "Could not update password", "err"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Shell>
+      <div className="w-full max-w-md">
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-emerald-500"><Lock className="h-7 w-7 text-black" /></div>
+          <h1 className="font-display text-4xl text-white">Set a New Password</h1>
+          <p className="mt-1 text-sm text-emerald-300/80">Choose a new password for your account</p>
+        </div>
+        <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-xl">
+          <Field label="New Password" v={pw} set={setPw} ph="••••••••" type="password" />
+          <button disabled={busy || !pw} onClick={save}
+            className="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-40">
+            {busy ? "Saving…" : "Update Password & Enter"}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
 function Header({ user, dark, setDark, onLogout }) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#070b0a]/80 backdrop-blur-xl">
@@ -632,7 +741,7 @@ function Header({ user, dark, setDark, onLogout }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="hidden rounded-full bg-white/5 px-3 py-1.5 text-xs font-semibold text-stone-300 sm:block">
+          <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-semibold text-stone-300">
             {user.role === "admin" ? "🛡️ Admin" : "👤 " + user.nickname}
           </span>
           <button onClick={() => setDark(!dark)} className="rounded-lg bg-white/5 p-2 text-stone-300 hover:bg-white/10">
@@ -648,7 +757,7 @@ function Header({ user, dark, setDark, onLogout }) {
 }
 
 /* ---------- Match list ---------- */
-function MatchList({ onOpen, results, now }) {
+function MatchList({ onOpen, results, now, nickname }) {
   const [q, setQ] = useState("");
   const grouped = useMemo(() => {
     const f = FIXTURES.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
@@ -659,6 +768,15 @@ function MatchList({ onOpen, results, now }) {
 
   return (
     <div>
+      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-r from-emerald-500/10 to-amber-500/5 px-4 py-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-emerald-500 font-display text-lg text-black">
+          {(nickname || "?").slice(0, 1).toUpperCase()}
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-emerald-400/70">Welcome back</div>
+          <div className="font-display text-2xl leading-none text-white">{nickname}</div>
+        </div>
+      </div>
       <SectionTitle icon={<Calendar className="h-5 w-5" />} title="Group Stage Fixtures" sub="72 matches · times in GMT+6 (Dhaka)" />
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
@@ -1068,27 +1186,39 @@ function Leaderboard({ bets, me }) {
   const board = useMemo(() => {
     const map = {};
     bets.forEach((b) => {
-      const u = (map[b.user] ||= { nick: b.user, staked: 0, returns: 0, wins: 0, points: 0 });
+      const u = (map[b.user] ||= { nick: b.user, staked: 0, returns: 0, wins: 0, points: 0, openCount: 0, openStake: 0, openPotential: 0 });
       u.staked += b.totalStake;
       if (b.status === "won") { u.returns += b.payout || 0; u.wins++; u.points += Math.round((b.payout || 0) - b.totalStake); }
       if (b.status === "lost") u.points -= b.totalStake;
+      if (b.status === "open") { u.openCount++; u.openStake += b.totalStake; u.openPotential += b.potential || 0; }
     });
     return Object.values(map).sort((a, b) => b.points - a.points);
   }, [bets]);
 
   return (
     <div>
-      <SectionTitle icon={<Crown className="h-5 w-5" />} title="Leaderboard" sub="Net profit ranking" />
-      {board.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No settled picks yet. Rankings appear once the admin settles matches.</p>}
+      <SectionTitle icon={<Crown className="h-5 w-5" />} title="Leaderboard" sub="Settled net profit · active picks shown below each player" />
+      {board.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No picks yet. Rankings appear once players make picks and the admin settles matches.</p>}
       <div className="space-y-2">
         {board.map((u, i) => (
-          <div key={u.nick} className={`flex items-center gap-3 rounded-2xl border p-3.5 ${u.nick === me ? "border-amber-400/50 bg-amber-400/10" : "border-white/10 bg-white/[0.03]"}`}>
-            <div className={`flex h-9 w-9 items-center justify-center rounded-xl font-display text-xl ${i === 0 ? "bg-amber-400 text-black" : i === 1 ? "bg-stone-300 text-black" : i === 2 ? "bg-amber-700 text-white" : "bg-white/10 text-stone-300"}`}>{i + 1}</div>
-            <div className="flex-1">
-              <div className="text-sm font-bold">{u.nick} {u.nick === me && <span className="text-[10px] text-amber-300">(you)</span>}</div>
-              <div className="text-[11px] text-stone-500">{u.wins} wins · {money(u.staked)} staked</div>
+          <div key={u.nick} className={`rounded-2xl border p-3.5 ${u.nick === me ? "border-amber-400/50 bg-amber-400/10" : "border-white/10 bg-white/[0.03]"}`}>
+            <div className="flex items-center gap-3">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-xl font-display text-xl ${i === 0 ? "bg-amber-400 text-black" : i === 1 ? "bg-stone-300 text-black" : i === 2 ? "bg-amber-700 text-white" : "bg-white/10 text-stone-300"}`}>{i + 1}</div>
+              <div className="flex-1">
+                <div className="text-sm font-bold">{u.nick} {u.nick === me && <span className="text-[10px] text-amber-300">(you)</span>}</div>
+                <div className="text-[11px] text-stone-500">{u.wins} wins · {money(u.staked)} staked</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[9px] uppercase tracking-wide text-stone-500">Settled</div>
+                <div className={`font-display text-2xl leading-none ${u.points >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{u.points >= 0 ? "+" : ""}{u.points}</div>
+              </div>
             </div>
-            <div className={`text-right font-display text-2xl ${u.points >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{u.points >= 0 ? "+" : ""}{u.points}</div>
+            {u.openCount > 0 && (
+              <div className="mt-2 flex items-center justify-between rounded-lg bg-sky-500/10 px-3 py-1.5 text-[11px]">
+                <span className="text-sky-300">⏳ {u.openCount} active {u.openCount === 1 ? "pick" : "picks"} · {money(u.openStake)} in play</span>
+                <span className="font-semibold text-sky-200">potential +{fmtN(u.openPotential - u.openStake)}</span>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1116,14 +1246,20 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, saveCo
         <Stat label="Pool P/L" v={money(totals.stake - totals.payout)} good={totals.stake - totals.payout >= 0} />
       </div>
 
-      <div className="mb-4 flex gap-2">
-        <button onClick={() => exportPicksCSV(bets, "SGA_WC2026_all_picks.csv")}
+      <div className="mb-2 flex gap-2">
+        <button onClick={() => exportPicksCSV(bets, "SGA_WC2026_all_picks.csv", true)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-          <BarChart3 className="h-3.5 w-3.5" /> Export Picks (Excel)
+          <BarChart3 className="h-3.5 w-3.5" /> Picks (Excel)
         </button>
         <button onClick={() => printPicks(bets, "All Players — Picks", true)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-          <Receipt className="h-3.5 w-3.5" /> Export Picks (PDF)
+          <Receipt className="h-3.5 w-3.5" /> Picks (PDF)
+        </button>
+      </div>
+      <div className="mb-4">
+        <button onClick={() => exportTransactionsCSV(txns, "SGA_WC2026_transactions.csv")}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-white/10">
+          <Wallet className="h-3.5 w-3.5" /> Export All Transactions (Excel)
         </button>
       </div>
 
@@ -1278,7 +1414,8 @@ function SettleForm({ match, onBack, results, settleMatch, showToast }) {
     ? { ...prev, scorers: Array.isArray(prev.scorers) ? prev.scorers.join(", ") : (prev.scorers || "") }
     : {
         ht: { h: 0, a: 0 }, ft: { h: 0, a: 0 }, firstGoalMinute: 10, firstGoalMethod: "rf",
-        totalCards: 2, ownGoal: false, scorers: "", cleanSheet: false, winFromBehind: false, bothHalves: false,
+        totalCards: 2, scorers: "",
+        wfbH: false, wfbA: false, bhH: false, bhA: false, ownGoalH: false, ownGoalA: false,
       });
   const [busy, setBusy] = useState(false);
   const num = (v) => Math.max(0, parseInt(v) || 0);
@@ -1294,6 +1431,11 @@ function SettleForm({ match, onBack, results, settleMatch, showToast }) {
     } catch (e) { showToast(e.message || "Settlement failed (admin only)", "err"); }
     finally { setBusy(false); }
   };
+
+  const Toggle = ({ k, lbl }) => (
+    <button onClick={() => setR({ ...r, [k]: !r[k] })}
+      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${r[k] ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{lbl}: {r[k] ? "Yes" : "No"}</button>
+  );
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -1317,22 +1459,18 @@ function SettleForm({ match, onBack, results, settleMatch, showToast }) {
         <AdminField label="Total Cards (Y+R)">
           <input type="number" value={r.totalCards} onChange={(e) => setR({ ...r, totalCards: num(e.target.value) })} className={ipt} />
         </AdminField>
-        <AdminField label="Own Goal Occurred?">
-          <select value={r.ownGoal ? "1" : "0"} onChange={(e) => setR({ ...r, ownGoal: e.target.value === "1" })} className={ipt}>
-            <option value="0">No</option><option value="1">Yes</option>
-          </select>
-        </AdminField>
       </div>
 
       <AdminField label="Goal Scorers in order (comma separated — first name decides First Scorer)">
-        <input value={r.scorers} onChange={(e) => setR({ ...r, scorers: e.target.value })} placeholder="e.g. Brazil · Striker, France · Forward" className={ipt} />
+        <input value={r.scorers} onChange={(e) => setR({ ...r, scorers: e.target.value })} placeholder="e.g. Vinicius Jr, Modric" className={ipt} />
       </AdminField>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {[["cleanSheet", "Clean Sheet"], ["winFromBehind", "Win From Behind"], ["bothHalves", "Scored Both Halves"]].map(([k, lbl]) => (
-          <button key={k} onClick={() => setR({ ...r, [k]: !r[k] })}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${r[k] ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{lbl}: {r[k] ? "Yes" : "No"}</button>
-        ))}
+      <div className="mt-3 rounded-xl bg-black/20 p-3">
+        <div className="mb-2 text-xs font-semibold text-stone-400">Per-team outcomes <span className="text-stone-600">(clean sheet is auto-detected from the score)</span></div>
+        <div className="mb-2"><div className="mb-1 text-[11px] text-emerald-300/80">{match.home}</div>
+          <div className="flex flex-wrap gap-2"><Toggle k="wfbH" lbl="Win From Behind" /><Toggle k="bhH" lbl="Both Halves" /><Toggle k="ownGoalH" lbl="Own Goal" /></div></div>
+        <div><div className="mb-1 text-[11px] text-amber-300/80">{match.away}</div>
+          <div className="flex flex-wrap gap-2"><Toggle k="wfbA" lbl="Win From Behind" /><Toggle k="bhA" lbl="Both Halves" /><Toggle k="ownGoalA" lbl="Own Goal" /></div></div>
       </div>
 
       <button onClick={settle} disabled={busy} className="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
