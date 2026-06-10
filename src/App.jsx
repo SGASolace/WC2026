@@ -657,7 +657,7 @@ export default function App() {
               <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} settleOutright={settleOutright} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
-                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} now={now} nickname={profile.nickname} />}
+                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} />}
                 {tab === "matches" && activeMatch && (
                   <MatchDetail match={activeMatch} config={configs[activeMatch.n]} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
@@ -867,14 +867,15 @@ function Header({ user, dark, setDark, onLogout }) {
 }
 
 /* ---------- Match list ---------- */
-function MatchList({ onOpen, results, now, nickname }) {
+function MatchList({ onOpen, results, configs, now, nickname }) {
   const [q, setQ] = useState("");
+  const liveFixtures = useMemo(() => FIXTURES.filter((m) => configs?.[m.n]?.live), [configs]);
   const grouped = useMemo(() => {
-    const f = FIXTURES.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
+    const f = liveFixtures.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
     const g = {};
     f.forEach((m) => { (g[m.date] ||= []).push(m); });
     return g;
-  }, [q]);
+  }, [q, liveFixtures]);
 
   return (
     <div>
@@ -887,12 +888,17 @@ function MatchList({ onOpen, results, now, nickname }) {
           <div className="font-display text-2xl leading-none text-white">{nickname}</div>
         </div>
       </div>
-      <SectionTitle icon={<Calendar className="h-5 w-5" />} title="Group Stage Fixtures" sub={`72 matches · times shown in your timezone (${TZ_ABBR})`} />
+      <SectionTitle icon={<Calendar className="h-5 w-5" />} title="Fixtures Open for Picks" sub={`${liveFixtures.length} live · times shown in your timezone (${TZ_ABBR})`} />
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a team…"
           className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
       </div>
+      {liveFixtures.length === 0 && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-stone-400">
+          No matches are open for picks yet. They'll appear here as soon as the admin publishes them.
+        </div>
+      )}
       <div className="space-y-5">
         {Object.entries(grouped).map(([date, ms]) => (
           <div key={date}>
@@ -1805,10 +1811,16 @@ function MatchPicker({ results, configs, onPick, manage }) {
       <div className="grid gap-2 sm:grid-cols-2">
         {list.map((m) => (
           <button key={m.n} onClick={() => onPick(m)}
-            className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left text-sm hover:border-emerald-400/40">
+            className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left text-sm hover:border-emerald-400/40">
             <span className="truncate">{m.hf} {m.home} v {m.away} {m.af}</span>
             {manage
-              ? (configs?.[m.n] ? <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">EDITED</span> : <ChevronRight className="h-4 w-4 shrink-0 text-stone-600" />)
+              ? (<span className="flex shrink-0 items-center gap-1">
+                  {configs?.[m.n]?.live
+                    ? <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">LIVE</span>
+                    : configs?.[m.n] ? <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">DRAFT</span>
+                    : <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-stone-500">NOT SET</span>}
+                  <ChevronRight className="h-4 w-4 text-stone-600" />
+                </span>)
               : (results[m.n] ? <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">{results[m.n].ft.h}–{results[m.n].ft.a}</span> : <ChevronRight className="h-4 w-4 shrink-0 text-stone-600" />)}
           </button>
         ))}
@@ -1896,6 +1908,7 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const [home, setHome] = useState(() => seedPlayers("home", match.home));
   const [away, setAway] = useState(() => seedPlayers("away", match.away));
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
+  const [live, setLive] = useState(!!config?.live);
   const [busy, setBusy] = useState(false);
 
   // markets to expose for odds editing (scorers handled via the player editor)
@@ -1916,14 +1929,27 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   };
   const setOdd = (key, id, val) => setOdds((o) => ({ ...o, [key]: { ...(o[key] || {}), [id]: val } }));
 
-  const save = async () => {
+  const cleanCfg = (liveVal) => {
     const clean = (arr) => arr.filter((p) => p.name.trim()).map((p) => ({ name: p.name.trim(), first: p.first || "10/1", any: p.any || "4/1" }));
+    return { players: { home: clean(home), away: clean(away) }, odds, live: liveVal };
+  };
+  const save = async () => {
     setBusy(true);
     try {
-      await saveConfig(match.n, { players: { home: clean(home), away: clean(away) }, odds });
-      showToast("Saved — live for everyone");
+      await saveConfig(match.n, cleanCfg(live));
+      showToast(live ? "Saved — live for players" : "Saved (not yet live)");
       onBack();
     } catch (e) { showToast(e.message || "Save failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+  const toggleLive = async () => {
+    const next = !live;
+    setBusy(true);
+    try {
+      await saveConfig(match.n, cleanCfg(next));
+      setLive(next);
+      showToast(next ? "Match is now LIVE for players" : "Match taken offline — hidden from players");
+    } catch (e) { showToast(e.message || "Failed (admin only)", "err"); }
     finally { setBusy(false); }
   };
 
@@ -1931,7 +1957,18 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
       <button onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-sm text-stone-400 hover:text-emerald-300"><ChevronLeft className="h-4 w-4" /> All matches</button>
       <h3 className="mb-1 font-display text-2xl">{match.hf} {match.home} v {match.away} {match.af}</h3>
-      <p className="mb-4 text-xs text-stone-500">Add the real squad names and set odds. Scorer odds (first / anytime) are set per player below.</p>
+      <p className="mb-3 text-xs text-stone-500">Add the real squad names and set odds. Scorer odds (first / anytime) are set per player below.</p>
+
+      <div className={`mb-4 flex items-center justify-between rounded-xl border p-3 ${live ? "border-emerald-400/40 bg-emerald-500/10" : "border-amber-400/30 bg-amber-500/10"}`}>
+        <div className="text-sm">
+          <div className="font-bold">{live ? "🟢 Live — visible to players" : "🟡 Not live — hidden from players"}</div>
+          <div className="text-[11px] text-stone-400">{live ? "Players can see this match and place picks." : "Set odds, then publish so players can see it."}</div>
+        </div>
+        <button onClick={toggleLive} disabled={busy}
+          className={`shrink-0 rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-50 ${live ? "bg-white/10 text-rose-300" : "bg-gradient-to-r from-amber-400 to-emerald-400 text-black"}`}>
+          {busy ? "…" : live ? "Take Offline" : "Go Live"}
+        </button>
+      </div>
 
       {[["home", match.home, home], ["away", match.away, away]].map(([side, team, list]) => {
         const squad = SQUADS[team] || [];
