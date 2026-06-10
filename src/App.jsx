@@ -220,6 +220,15 @@ const db = {
     const { error } = await supabase.from("results").delete().eq("match_no", matchNo);
     if (error) throw error;
   },
+  async resetAll() {
+    let e;
+    ({ error: e } = await supabase.from("bets").delete().not("id", "is", null)); if (e) throw e;
+    ({ error: e } = await supabase.from("transactions").delete().not("id", "is", null)); if (e) throw e;
+    ({ error: e } = await supabase.from("results").delete().not("match_no", "is", null)); if (e) throw e;
+    ({ error: e } = await supabase.from("profiles").update({ deposit: 0, bonus: 0 }).not("id", "is", null)); if (e) throw e;
+    // outright wallet columns may not exist on older setups — ignore if missing
+    try { await supabase.from("profiles").update({ og_deposit: 0, og_bonus: 0 }).not("id", "is", null); } catch (_) {}
+  },
   async updateBet(id, patch) {
     const { error } = await supabase.from("bets").update(patch).eq("id", id);
     if (error) throw error;
@@ -739,6 +748,8 @@ export default function App() {
     await refresh();
   };
 
+  const resetAll = async () => { await db.resetAll(); await refresh(); };
+
   if (!hasSupabase) return <ConfigNeeded />;
   if (!authReady) return <Splash msg="Loading…" />;
   if (recovery) return <ResetPassword showToast={showToast} onDone={() => setRecovery(false)} />;
@@ -767,7 +778,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} />}
@@ -1759,7 +1770,7 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players
   const [pick, setPick] = useState(null);
   const totals = bets.reduce((a, b) => { a.stake += b.totalStake; if (b.status === "won") a.payout += b.payout || 0; return a; }, { stake: 0, payout: 0 });
@@ -1827,7 +1838,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
       ) : mode === "fantasy" ? (
         <FantasyAdmin config={configs[-2]} results={results} bets={bets} saveConfig={saveConfig} settleFantasy={settleFantasy} resetFantasy={resetFantasy} showToast={showToast} />
       ) : (
-        <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+        <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} resetAll={resetAll} showToast={showToast} />
       )}
     </div>
   );
@@ -2144,8 +2155,18 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
 }
 
 /* ---------- Admin: give coins to players ---------- */
-function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, showToast }) {
+function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, resetAll, showToast }) {
   const list = players.filter((p) => !p.is_admin);
+  const [armed, setArmed] = useState(false);
+  const [word, setWord] = useState("");
+  const [busy, setBusy] = useState(false);
+  const doReset = async () => {
+    if (word.trim().toUpperCase() !== "RESET") { showToast('Type RESET to confirm', "err"); return; }
+    setBusy(true);
+    try { await resetAll(); showToast("Reset done — picks, results, transactions & balances cleared"); setArmed(false); setWord(""); }
+    catch (e) { showToast(e.message || "Reset failed", "err"); }
+    finally { setBusy(false); }
+  };
   return (
     <div>
       <SectionTitle icon={<Wallet className="h-5 w-5" />} title="Players & Coins" sub="Credit each wallet — bonus is added automatically by deposit tier" />
@@ -2164,6 +2185,24 @@ function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, showT
             myTxns={(txns || []).filter((t) => t.user_id === p.id)}
             creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
         ))}
+      </div>
+
+      <div className="mt-8 rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
+        <div className="text-sm font-bold text-rose-200">⚠️ Danger zone — Reset everything except accounts</div>
+        <p className="mt-1 text-[12px] text-stone-400">Permanently clears all picks (match, outright, fantasy), all settled results, the transaction history, and zeroes every player's wallets. Keeps logins, odds, players, managers, and Go-Live settings. No undo.</p>
+        {!armed ? (
+          <button onClick={() => setArmed(true)} className="mt-3 rounded-xl bg-rose-500/15 px-4 py-2.5 text-sm font-bold text-rose-200 hover:bg-rose-500/25">Reset everything…</button>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <div className="text-[12px] text-stone-300">Type <b className="text-rose-200">RESET</b> to confirm:</div>
+            <div className="flex gap-2">
+              <input value={word} onChange={(e) => setWord(e.target.value)} placeholder="RESET"
+                className="min-w-0 flex-1 rounded-lg border border-rose-400/40 bg-black/30 px-3 py-2 text-sm uppercase tracking-wide outline-none focus:border-rose-400" />
+              <button onClick={doReset} disabled={busy} className="shrink-0 rounded-lg bg-rose-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "Resetting…" : "Confirm Reset"}</button>
+              <button onClick={() => { setArmed(false); setWord(""); }} disabled={busy} className="shrink-0 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-stone-300">Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
