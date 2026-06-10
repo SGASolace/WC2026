@@ -2207,9 +2207,11 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         <div className="space-y-2">
           {specials.map((s, i) => (
             <div key={s.id} className="flex items-center gap-2">
-              <input value={s.label} onChange={(e) => setSpecial(i, "label", e.target.value)} placeholder="Special label (e.g. Penalty awarded)" className={ipt + " flex-1"} />
-              <input value={s.odds} onChange={(e) => setSpecial(i, "odds", e.target.value)} placeholder="2/1" className={ipt + " w-20 text-center"} />
-              <button onClick={() => delSpecial(i)} className="rounded-lg bg-white/5 p-2 text-stone-400 hover:text-rose-400"><X className="h-4 w-4" /></button>
+              <input value={s.label} onChange={(e) => setSpecial(i, "label", e.target.value)} placeholder="Special label (e.g. Penalty awarded)"
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
+              <input value={s.odds} onChange={(e) => setSpecial(i, "odds", e.target.value)} placeholder="2/1"
+                className="w-16 shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-center text-sm outline-none focus:border-emerald-400/50" />
+              <button onClick={() => delSpecial(i)} className="shrink-0 rounded-lg bg-white/5 p-2 text-stone-400 hover:text-rose-400"><X className="h-4 w-4" /></button>
             </div>
           ))}
         </div>
