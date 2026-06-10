@@ -2869,13 +2869,29 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
 // Outright winner-market editor: edit odds + add / delete teams & players (catch-all stays)
 function OutrightWinnerEditor({ mk, odds, setOdd, onAdd, onDelete }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
+  const [name, setName] = useState("");     // chosen player/team
+  const [finA, setFinA] = useState("");      // finalists: team A
+  const [finB, setFinB] = useState("");      // finalists: team B
   const [od, setOd] = useState("");
-  const ph = mk.key === "og_finalists" ? "Team A - Team B"
-    : (mk.key === "og_champion" || mk.key === "og_runnerup") ? "Team name" : "Player name";
-  const add = () => { if (!name.trim()) return; onAdd(mk.key, name.trim(), (od || "").trim() || "50/1"); setName(""); setOd(""); };
   const named = mk.selections.filter((s) => !s.meta?.other);
   const other = mk.selections.find((s) => s.meta?.other);
+
+  const isPlayer = ["og_boot", "og_ball", "og_gloves", "og_emerging"].includes(mk.key);
+  const isTeam = mk.key === "og_champion" || mk.key === "og_runnerup";
+  const isFinal = mk.key === "og_finalists";
+  const teams = useMemo(() => Object.keys(SQUADS).sort(), []);
+  const taken = useMemo(() => new Set(named.map((s) => s.label.trim().toLowerCase())), [named]);
+  const teamOptions = teams.filter((t) => !taken.has(t.toLowerCase()));
+  const playerGroups = useMemo(() => teams.map((t) => ({ team: t, players: (SQUADS[t] || []).filter((p) => !taken.has(p.toLowerCase())) })).filter((g) => g.players.length), [teams, taken]);
+
+  const add = () => {
+    let label = "";
+    if (isFinal) { if (!finA || !finB || finA === finB) return; label = `${finA} - ${finB}`; }
+    else { if (!name) return; label = name; }
+    onAdd(mk.key, label, (od || "").trim() || "50/1");
+    setName(""); setFinA(""); setFinB(""); setOd("");
+  };
+
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
@@ -2901,18 +2917,48 @@ function OutrightWinnerEditor({ mk, odds, setOdd, onAdd, onDelete }) {
               <span className="w-7 shrink-0" />
             </div>
           )}
-          <div className="flex items-center gap-2 border-t border-white/5 pt-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder={ph}
-              className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs outline-none focus:border-emerald-400/50" />
-            <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="50/1"
-              className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-xs text-emerald-300 outline-none focus:border-emerald-400/50" />
-            <button onClick={add} className="shrink-0 rounded-md bg-emerald-400/90 px-2.5 py-1.5 text-xs font-bold text-black">Add</button>
+
+          <div className="border-t border-white/5 pt-2">
+            <div className="mb-1.5 text-[10px] uppercase tracking-wide text-stone-500">Add {isTeam ? "a team" : isFinal ? "a finalist pairing" : "a player"}</div>
+            {isFinal ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={finA} onChange={(e) => setFinA(e.target.value)} className={ogSelCls}>
+                  <option value="">Team A…</option>
+                  {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <span className="text-stone-500">vs</span>
+                <select value={finB} onChange={(e) => setFinB(e.target.value)} className={ogSelCls}>
+                  <option value="">Team B…</option>
+                  {teams.filter((t) => t !== finA).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="50/1"
+                  className="w-16 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-xs text-emerald-300 outline-none focus:border-emerald-400/50" />
+                <button onClick={add} className="shrink-0 rounded-md bg-emerald-400/90 px-3 py-1.5 text-xs font-bold text-black">Add</button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <select value={name} onChange={(e) => setName(e.target.value)} className={`min-w-0 flex-1 ${ogSelCls}`}>
+                  <option value="">{isTeam ? "Choose a team…" : "Choose a player…"}</option>
+                  {isTeam
+                    ? teamOptions.map((t) => <option key={t} value={t}>{t}</option>)
+                    : playerGroups.map((g) => (
+                        <optgroup key={g.team} label={g.team}>
+                          {g.players.map((p) => <option key={p} value={p}>{p}</option>)}
+                        </optgroup>
+                      ))}
+                </select>
+                <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="50/1"
+                  className="w-16 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-xs text-emerald-300 outline-none focus:border-emerald-400/50" />
+                <button onClick={add} className="shrink-0 rounded-md bg-emerald-400/90 px-3 py-1.5 text-xs font-bold text-black">Add</button>
+              </div>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 }
+const ogSelCls = "rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-400/50";
 
 function OddsMarket({ mk, odds, setOdd }) {
   const [open, setOpen] = useState(false);
