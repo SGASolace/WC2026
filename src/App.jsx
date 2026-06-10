@@ -269,6 +269,8 @@ function buildMarkets(m, cfg = {}) {
         sel("wfba", `${A} Win From Behind`, "8/1", { sp: "winFromBehind", team: "A" }),
         sel("bhh", `${H} Score in Both Halves`, "3/1", { sp: "bothHalves", team: "H" }),
         sel("bha", `${A} Score in Both Halves`, "9/2", { sp: "bothHalves", team: "A" }),
+        ...((cfg?.specials || []).filter((s) => (s.label || "").trim()).map((s) =>
+          sel(s.id, s.label.trim(), s.odds || "2/1", { sp: "custom", cid: s.id }))),
       ] },
     { key: "first_scorer", title: "First Goal Scorer", mode: "multi", icon: "🥇", searchable: true, selections: scorerSel("first") },
     { key: "anytime_scorer", title: "Anytime Goal Scorer", mode: "multi", icon: "⚽", searchable: true, selections: scorerSel("any") },
@@ -352,6 +354,7 @@ function evaluateItem(item, R) {
       if (meta.sp === "cleanSheet") return t === "H" ? (ftA === 0) : (ftH === 0);
       if (meta.sp === "winFromBehind") return t === "H" ? !!R.wfbH : !!R.wfbA;
       if (meta.sp === "bothHalves") return t === "H" ? !!R.bhH : !!R.bhA;
+      if (meta.sp === "custom") return !!R.customSpecials?.[meta.cid];
       return false;
     }
     case "first_scorer": {
@@ -1615,7 +1618,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
           {!pick ? (
             <MatchPicker results={results} onPick={setPick} />
           ) : (
-            <SettleForm match={pick} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} resetMatch={resetMatch} bets={bets} showToast={showToast} />
+            <SettleForm match={pick} config={configs[pick.n]} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} resetMatch={resetMatch} bets={bets} showToast={showToast} />
           )}
         </>
       ) : mode === "manage" ? (
@@ -1938,18 +1941,21 @@ function MatchPicker({ results, configs, onPick, manage }) {
   );
 }
 
-function SettleForm({ match, onBack, results, settleMatch, resetMatch, bets, showToast }) {
+function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, bets, showToast }) {
   const prev = results[match.n];
+  const customSpecials = (config?.specials || []).filter((s) => (s.label || "").trim());
   const [r, setR] = useState(prev
-    ? { ...prev, scorers: Array.isArray(prev.scorers) ? prev.scorers.join(", ") : (prev.scorers || "") }
+    ? { ...prev, scorers: Array.isArray(prev.scorers) ? prev.scorers.join(", ") : (prev.scorers || ""), customSpecials: prev.customSpecials || {} }
     : {
         ht: { h: 0, a: 0 }, ft: { h: 0, a: 0 }, firstGoalMinute: 10, firstGoalMethod: "rf",
         totalCards: 2, scorers: "",
         wfbH: false, wfbA: false, bhH: false, bhA: false, ownGoalH: false, ownGoalA: false,
+        customSpecials: {},
       });
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false); // 'settle' | 'reset' | false
   const num = (v) => Math.max(0, parseInt(v) || 0);
+  const toggleSpecial = (cid) => setR((x) => ({ ...x, customSpecials: { ...(x.customSpecials || {}), [cid]: !x.customSpecials?.[cid] } }));
 
   // how many slips / players this match touches
   const affected = (bets || []).filter((b) => b.kind !== "outright" && b.items.some((it) => it.matchId === match.n));
@@ -2017,6 +2023,23 @@ function SettleForm({ match, onBack, results, settleMatch, resetMatch, bets, sho
           <div className="flex flex-wrap gap-2"><Toggle k="wfbA" lbl="Win From Behind" /><Toggle k="bhA" lbl="Both Halves" /><Toggle k="ownGoalA" lbl="Own Goal" /></div></div>
       </div>
 
+      {customSpecials.length > 0 && (
+        <div className="mt-3 rounded-xl bg-black/20 p-3">
+          <div className="mb-2 text-xs font-semibold text-stone-400">Custom specials — mark each result</div>
+          <div className="flex flex-wrap gap-2">
+            {customSpecials.map((s) => {
+              const on = !!r.customSpecials?.[s.id];
+              return (
+                <button key={s.id} onClick={() => toggleSpecial(s.id)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${on ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>
+                  {s.label}: {on ? "Yes" : "No"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {prev && (
         <div className="mt-4 rounded-xl border border-sky-400/30 bg-sky-500/10 p-3 text-[11px] text-sky-200">
           Already settled {prev.ft.h}–{prev.ft.a}. Re-settling recalculates every affected pick from your new entries; Reset reopens them.
@@ -2068,12 +2091,13 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const [home, setHome] = useState(() => seedPlayers("home", match.home));
   const [away, setAway] = useState(() => seedPlayers("away", match.away));
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
+  const [specials, setSpecials] = useState(() => (config?.specials || []).map((s) => ({ ...s })));
   const [live, setLive] = useState(!!config?.live);
   const [busy, setBusy] = useState(false);
 
   // markets to expose for odds editing (scorers handled via the player editor)
-  const editable = useMemo(() => buildMarkets(match, { players: { home, away }, odds })
-    .filter((mk) => !["first_scorer", "anytime_scorer"].includes(mk.key)), [match, home, away, odds]);
+  const editable = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials })
+    .filter((mk) => !["first_scorer", "anytime_scorer"].includes(mk.key)), [match, home, away, odds, specials]);
 
   const setPlayer = (side, i, field, val) => {
     const list = side === "home" ? [...home] : [...away];
@@ -2089,9 +2113,14 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   };
   const setOdd = (key, id, val) => setOdds((o) => ({ ...o, [key]: { ...(o[key] || {}), [id]: val } }));
 
+  const addSpecial = () => setSpecials((s) => [...s, { id: "sp_" + uid(), label: "", odds: "2/1" }]);
+  const setSpecial = (i, field, val) => setSpecials((s) => s.map((x, j) => j === i ? { ...x, [field]: val } : x));
+  const delSpecial = (i) => setSpecials((s) => s.filter((_, j) => j !== i));
+
   const cleanCfg = (liveVal) => {
     const clean = (arr) => arr.filter((p) => p.name.trim()).map((p) => ({ name: p.name.trim(), first: p.first || "10/1", any: p.any || "4/1" }));
-    return { players: { home: clean(home), away: clean(away) }, odds, live: liveVal };
+    const cleanSp = specials.filter((s) => (s.label || "").trim()).map((s) => ({ id: s.id, label: s.label.trim(), odds: s.odds || "2/1" }));
+    return { players: { home: clean(home), away: clean(away) }, odds, specials: cleanSp, live: liveVal };
   };
   const save = async () => {
     setBusy(true);
@@ -2165,6 +2194,26 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
           </div>
         </div>
       );})}
+
+      <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-sm font-bold">✨ Custom Match Specials</div>
+          <button onClick={addSpecial} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">
+            <Plus className="h-3.5 w-3.5" /> Add
+          </button>
+        </div>
+        <p className="mb-2 text-[11px] text-stone-500">Add your own Yes/No specials for this match (e.g. “Penalty in the match”, “Red card shown”). Set the label and odds; you'll mark each Won/No at settlement.</p>
+        {specials.length === 0 && <p className="py-2 text-center text-[11px] text-stone-600">No custom specials. Tap Add to create one.</p>}
+        <div className="space-y-2">
+          {specials.map((s, i) => (
+            <div key={s.id} className="flex items-center gap-2">
+              <input value={s.label} onChange={(e) => setSpecial(i, "label", e.target.value)} placeholder="Special label (e.g. Penalty awarded)" className={ipt + " flex-1"} />
+              <input value={s.odds} onChange={(e) => setSpecial(i, "odds", e.target.value)} placeholder="2/1" className={ipt + " w-20 text-center"} />
+              <button onClick={() => delSpecial(i)} className="rounded-lg bg-white/5 p-2 text-stone-400 hover:text-rose-400"><X className="h-4 w-4" /></button>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-5 mb-2 text-sm font-bold">Odds — other markets</div>
       <div className="space-y-2">
