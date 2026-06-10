@@ -661,8 +661,8 @@ export default function App() {
                 {tab === "matches" && activeMatch && (
                   <MatchDetail match={activeMatch} config={configs[activeMatch.n]} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
-                {tab === "outrights" && <Outrights config={ogConfig} wallet={ogWallet} slip={ogSlip} setSlip={setOgSlip} now={now} />}
-                {tab === "mybets" && <MyBets bets={myBets} ogBets={myOgBets} wallet={wallet} ogWallet={ogWallet} nickname={profile.nickname} txns={txns} />}
+                {tab === "outrights" && <Outrights config={ogConfig} wallet={ogWallet} slip={ogSlip} setSlip={setOgSlip} now={now} ogBets={myOgBets} nickname={profile.nickname} />}
+                {tab === "mybets" && <MyBets bets={myBets} wallet={wallet} nickname={profile.nickname} txns={txns} />}
                 {tab === "board" && <Leaderboard bets={matchBets} me={profile.nickname} />}
               </>
             )}
@@ -1190,7 +1190,7 @@ function ogCountdown(now) {
   const d = Math.floor(diff / 8.64e7), h = Math.floor((diff % 8.64e7) / 3.6e6), mn = Math.floor((diff % 3.6e6) / 6e4);
   return d > 0 ? `${d}d ${h}h ${mn}m` : h > 0 ? `${h}h ${mn}m` : `${mn}m`;
 }
-function Outrights({ config, wallet, slip, setSlip, now }) {
+function Outrights({ config, wallet, slip, setSlip, now, ogBets = [], nickname }) {
   const markets = useMemo(() => buildOutrightMarkets(config), [config]);
   const locked = outrightLocked(now);
   const countdown = ogCountdown(now);
@@ -1219,6 +1219,22 @@ function Outrights({ config, wallet, slip, setSlip, now }) {
       <p className="mb-3 text-xs text-stone-500">Stake {money(OUTRIGHT_RULES.min)}–{money(OUTRIGHT_RULES.max)} per pick · choose as many as you like. For an "Any other" option, type the name on your slip.</p>
       <div className="space-y-3">
         {markets.map((mk) => <MarketCard key={mk.key} mk={mk} inSlip={inSlip} toggle={toggle} disabled={locked} />)}
+      </div>
+
+      <div className="mt-8">
+        <div className="mb-3 flex items-center justify-between">
+          <SectionTitle icon={<Receipt className="h-5 w-5" />} title="My Outright Picks" sub={`${ogBets.length} submitted`} />
+          {ogBets.length > 0 && (
+            <button onClick={() => printPicks(ogBets, `${nickname} — Outright Picks`, false)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+              <Receipt className="h-3.5 w-3.5" /> Download PDF
+            </button>
+          )}
+        </div>
+        <div className="space-y-2.5">
+          {ogBets.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No outright picks yet.</p>}
+          {ogBets.map((b) => <BetCard key={b.id} b={b} />)}
+        </div>
       </div>
     </div>
   );
@@ -1320,7 +1336,7 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast
 
 
 /* ---------- My Picks + Wallet ---------- */
-function MyBets({ bets, ogBets = [], wallet, ogWallet, nickname, txns }) {
+function MyBets({ bets, wallet, nickname, txns }) {
   const [f, setF] = useState("all");
   const [showHist, setShowHist] = useState(false);
   const filtered = bets.filter((b) => f === "all" || b.status === f);
@@ -1393,31 +1409,6 @@ function MyBets({ bets, ogBets = [], wallet, ogWallet, nickname, txns }) {
       <div className="space-y-2.5">
         {filtered.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No picks here yet.</p>}
         {filtered.map((b) => <BetCard key={b.id} b={b} />)}
-      </div>
-
-      <div className="mt-8">
-        <SectionTitle icon={<Trophy className="h-5 w-5" />} title="Outright Wallet" sub="Separate balance for tournament-long picks" />
-        <div className="mb-3 grid grid-cols-3 gap-2">
-          <Stat label="Deposit" v={money(ogWallet.deposit)} />
-          <Stat label="Bonus" v={money(ogWallet.bonus)} good />
-          <Stat label="In Bets" v={money(ogWallet.inBets)} />
-          <Stat label="Won" v={money(ogWallet.won)} good />
-          <Stat label="Lost" v={money(ogWallet.lost)} />
-          <Stat label="Net Balance" v={money(ogWallet.net)} good={ogWallet.net >= 0} />
-        </div>
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-bold text-stone-200">My Outright Picks · {ogBets.length}</span>
-          {ogBets.length > 0 && (
-            <button onClick={() => printPicks(ogBets, `${nickname} — Outright Picks`, false)}
-              className="flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-              <Receipt className="h-3.5 w-3.5" /> Download PDF
-            </button>
-          )}
-        </div>
-        <div className="space-y-2.5">
-          {ogBets.length === 0 && <p className="py-6 text-center text-sm text-stone-500">No outright picks yet.</p>}
-          {ogBets.map((b) => <BetCard key={b.id} b={b} />)}
-        </div>
       </div>
     </div>
   );
