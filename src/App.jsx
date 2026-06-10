@@ -1462,6 +1462,23 @@ function ogCountdown(now) {
 }
 function Outrights({ config, wallet, slip, setSlip, now, ogBets = [], nickname }) {
   const markets = useMemo(() => buildOutrightMarkets(config), [config]);
+  // eligible names for each "Any other" pick: teams or players not already offered with odds
+  const otherOpts = useMemo(() => {
+    const map = {};
+    markets.forEach((mk) => {
+      if (mk.type !== "winner") return;
+      const taken = new Set(mk.selections.filter((s) => !s.meta.other).map((s) => s.label.trim().toLowerCase()));
+      const teams = Object.keys(SQUADS).sort();
+      if (mk.key === "og_champion" || mk.key === "og_runnerup") {
+        map[mk.key] = { grouped: false, list: teams.filter((t) => !taken.has(t.toLowerCase())) };
+      } else if (mk.key === "og_finalists") {
+        map[mk.key] = { combo: true, teams }; // two-team pairing
+      } else {
+        map[mk.key] = { grouped: true, groups: teams.map((t) => ({ team: t, players: (SQUADS[t] || []).filter((p) => !taken.has(p.toLowerCase())) })).filter((g) => g.players.length) };
+      }
+    });
+    return map;
+  }, [markets]);
   const locked = outrightLocked(now);
   const countdown = ogCountdown(now);
   const inSlip = (selId) => slip.some((s) => s.selId === selId);
@@ -1469,7 +1486,7 @@ function Outrights({ config, wallet, slip, setSlip, now, ogBets = [], nickname }
     if (locked) return;
     setSlip((prev) => {
       if (prev.find((x) => x.selId === s.id)) return prev.filter((x) => x.selId !== s.id);
-      return [...prev, { matchId: -1, match: "Tournament Outrights", marketKey: mk.key, marketTitle: mk.title, selId: s.id, label: s.label, odds: s.odds, oddsStr: s.oddsStr, meta: s.meta, stake: OUTRIGHT_RULES.min }];
+      return [...prev, { matchId: -1, match: "Tournament Outrights", marketKey: mk.key, marketTitle: mk.title, selId: s.id, label: s.label, odds: s.odds, oddsStr: s.oddsStr, meta: s.meta, stake: OUTRIGHT_RULES.min, options: s.meta?.other ? otherOpts[mk.key] : undefined }];
     });
   };
   return (
@@ -1485,7 +1502,7 @@ function Outrights({ config, wallet, slip, setSlip, now, ogBets = [], nickname }
       <div className={`mb-4 rounded-xl p-3 text-center text-sm font-semibold ${locked ? "bg-rose-500/15 text-rose-300" : "bg-amber-500/15 text-amber-200"}`}>
         {locked ? "🔒 Outright entries are closed" : `Entries close ${outrightDeadlineLocal()} ${TZ_ABBR} · ${countdown} left`}
       </div>
-      <p className="mb-3 text-xs text-stone-500">Stake {money(OUTRIGHT_RULES.min)}–{money(OUTRIGHT_RULES.max)} per pick · choose as many as you like. For an "Any other" option, type the name on your slip.</p>
+      <p className="mb-3 text-xs text-stone-500">Stake {money(OUTRIGHT_RULES.min)}–{money(OUTRIGHT_RULES.max)} per pick · choose as many as you like. For an "Any other" option, pick the team/player from the dropdown on your slip.</p>
       <div className="space-y-3">
         {markets.map((mk) => <MarketCard key={mk.key} mk={mk} inSlip={inSlip} toggle={toggle} disabled={locked} />)}
       </div>
@@ -1516,6 +1533,13 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast
   const [placed, setPlaced] = useState(null);
   const setStake = (id, v) => setSlip((p) => p.map((x) => x.selId === id ? { ...x, stake: Math.max(0, +v || 0) } : x));
   const setCustomName = (id, v) => setSlip((p) => p.map((x) => x.selId === id ? { ...x, customName: v } : x));
+  // finalists "any other": pick two teams; combine into "A - B"
+  const setFinalist = (id, which, value) => setSlip((p) => p.map((x) => {
+    if (x.selId !== id) return x;
+    const finA = which === "A" ? value : (x.finA || "");
+    const finB = which === "B" ? value : (x.finB || "");
+    return { ...x, finA, finB, customName: finA && finB ? `${finA} - ${finB}` : "" };
+  }));
   const remove = (id) => setSlip((p) => p.filter((x) => x.selId !== id));
   const totalStake = slip.reduce((a, s) => a + s.stake, 0);
   const potential = slip.reduce((a, s) => a + s.stake * s.odds, 0);
@@ -1578,8 +1602,40 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast
                     <button onClick={() => remove(s.selId)} className="rounded p-1 text-stone-500 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
                   </div>
                   {s.meta?.other && (
-                    <input value={s.customName || ""} onChange={(e) => setCustomName(s.selId, e.target.value)} placeholder="Type the team / player name"
-                      className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
+                    s.options && s.options.combo ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <select value={s.finA || ""} onChange={(e) => setFinalist(s.selId, "A", e.target.value)}
+                          className="min-w-0 flex-1 rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400">
+                          <option value="">Team A…</option>
+                          {s.options.teams.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <span className="text-[11px] text-stone-500">vs</span>
+                        <select value={s.finB || ""} onChange={(e) => setFinalist(s.selId, "B", e.target.value)}
+                          className="min-w-0 flex-1 rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400">
+                          <option value="">Team B…</option>
+                          {s.options.teams.filter((t) => t !== s.finA).map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    ) : s.options && s.options.grouped === false ? (
+                      <select value={s.customName || ""} onChange={(e) => setCustomName(s.selId, e.target.value)}
+                        className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400">
+                        <option value="">Choose a team…</option>
+                        {s.options.list.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    ) : s.options && s.options.grouped === true ? (
+                      <select value={s.customName || ""} onChange={(e) => setCustomName(s.selId, e.target.value)}
+                        className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400">
+                        <option value="">Choose a player…</option>
+                        {s.options.groups.map((g) => (
+                          <optgroup key={g.team} label={g.team}>
+                            {g.players.map((p) => <option key={p} value={p}>{p}</option>)}
+                          </optgroup>
+                        ))}
+                      </select>
+                    ) : (
+                      <input value={s.customName || ""} onChange={(e) => setCustomName(s.selId, e.target.value)} placeholder="Type the team / player name"
+                        className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
+                    )
                   )}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="rounded-md bg-white/10 px-2 py-1 text-xs font-bold text-emerald-300">@ {s.oddsStr}</span>
