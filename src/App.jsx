@@ -64,6 +64,17 @@ function buildOutrightMarkets(cfg = {}) {
     { key: "og_cards", title: "Tournament's Cards", icon: "🟨", mode: "multi", type: "total", selections: toTotals("og_cards", "cards", OG_CARDS_LINES) },
     { key: "og_pens", title: "Tournament's Penalties Awarded", icon: "🎯", mode: "multi", type: "total", selections: toTotals("og_pens", "penalties", OG_PENS_LINES) },
   ];
+  // admin-added / admin-removed selections (winner markets only): teams & players
+  const removed = cfg?.removed || {}, added = cfg?.added || {};
+  for (const mk of markets) {
+    if (mk.type !== "winner") continue;
+    if (removed[mk.key]?.length) mk.selections = mk.selections.filter((s) => s.meta.other || !removed[mk.key].includes(s.id));
+    const add = (added[mk.key] || []).map((a) => ({ id: a.id, label: a.label, oddsStr: a.oddsStr, odds: toDecimal(a.oddsStr), meta: { og: mk.key } }));
+    if (add.length) {
+      const oi = mk.selections.findIndex((s) => s.meta.other); // keep the catch-all last
+      if (oi >= 0) mk.selections.splice(oi, 0, ...add); else mk.selections.push(...add);
+    }
+  }
   if (cfg?.odds) for (const mk of markets) for (const s of mk.selections) {
     const o = cfg.odds[mk.key]?.[s.id];
     if (o) { s.oddsStr = o; s.odds = toDecimal(o); }
@@ -644,6 +655,53 @@ const FONTS = `
 .font-body{font-family:'Sora',sans-serif}
 `;
 
+// Inject PWA manifest + icons/meta into <head> and register the service worker.
+// Files live in /public (served at the site root): manifest.webmanifest, sw.js, icon-*.png.
+// onUpdate(registration) fires when a newer version has been downloaded and is waiting.
+function setupPWA(onUpdate) {
+  if (typeof document === "undefined") return;
+  const head = document.head;
+  const ensure = (sel, make) => { if (!head.querySelector(sel)) head.appendChild(make()); };
+  const linkEl = (rel, attrs) => { const l = document.createElement("link"); l.rel = rel; Object.assign(l, attrs); return l; };
+  const metaEl = (name, content) => { const m = document.createElement("meta"); m.setAttribute("name", name); m.setAttribute("content", content); return m; };
+
+  ensure('link[rel="manifest"]', () => linkEl("manifest", { href: "/manifest.webmanifest" }));
+  ensure('link[rel="apple-touch-icon"]', () => linkEl("apple-touch-icon", { href: "/apple-touch-icon.png" }));
+  ensure('link[rel="icon"]', () => linkEl("icon", { href: "/favicon-32.png", type: "image/png" }));
+  ensure('meta[name="theme-color"]', () => metaEl("theme-color", "#0e9e6e"));
+  ensure('meta[name="apple-mobile-web-app-capable"]', () => metaEl("apple-mobile-web-app-capable", "yes"));
+  ensure('meta[name="mobile-web-app-capable"]', () => metaEl("mobile-web-app-capable", "yes"));
+  ensure('meta[name="apple-mobile-web-app-status-bar-style"]', () => metaEl("apple-mobile-web-app-status-bar-style", "black-translucent"));
+  ensure('meta[name="apple-mobile-web-app-title"]', () => metaEl("apple-mobile-web-app-title", "SGA WC 2026"));
+
+  if ("serviceWorker" in navigator) {
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloading) return; reloading = true; window.location.reload();
+    });
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        // a newer worker is already installed and waiting
+        if (reg.waiting && navigator.serviceWorker.controller) onUpdate?.(reg);
+        // a newer worker is downloading now
+        reg.addEventListener("updatefound", () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener("statechange", () => {
+            if (nw.state === "installed" && navigator.serviceWorker.controller) onUpdate?.(reg);
+          });
+        });
+      }).catch((e) => console.warn("SW registration failed:", e));
+    });
+  }
+}
+
+// tell the waiting worker to take over, which triggers the controllerchange reload above
+function applyPWAUpdate(reg) {
+  if (reg && reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+  else window.location.reload();
+}
+
 export default function App() {
   const [dark, setDark] = useState(true);
   const [session, setSession] = useState(null);
@@ -664,6 +722,10 @@ export default function App() {
   const [recovery, setRecovery] = useState(false);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
+
+  // Progressive Web App: make the app installable to the home screen.
+  const [swUpdate, setSwUpdate] = useState(null);
+  useEffect(() => { setupPWA((reg) => setSwUpdate(reg)); }, []);
 
   const showToast = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2600); };
 
@@ -833,6 +895,17 @@ export default function App() {
           {toast && (
             <div className={`fixed left-1/2 top-5 z-[60] -translate-x-1/2 rounded-full px-5 py-2.5 text-sm font-semibold shadow-2xl backdrop-blur ${toast.kind === "err" ? "bg-rose-500/90" : "bg-emerald-500/90"} text-black`}>
               {toast.msg}
+            </div>
+          )}
+
+          {swUpdate && (
+            <div className="fixed inset-x-3 bottom-24 z-[80] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-emerald-400/40 bg-[#0a1311]/95 px-4 py-3 shadow-2xl backdrop-blur sm:bottom-6">
+              <span className="text-sm font-semibold text-emerald-200">A new version is available.</span>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => applyPWAUpdate(swUpdate)}
+                  className="rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 px-3.5 py-1.5 text-sm font-bold text-black">Refresh</button>
+                <button onClick={() => setSwUpdate(null)} className="rounded-lg bg-white/5 p-1.5 text-stone-400 hover:text-stone-200"><X className="h-4 w-4" /></button>
+              </div>
             </div>
           )}
         </div>
@@ -1923,15 +1996,23 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
 
 /* ---------- Admin: outrights (edit odds + settle winners) ---------- */
 function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright, resetOutright, showToast }) {
-  const markets = useMemo(() => buildOutrightMarkets(config), [config]);
   const ogBets = useMemo(() => (bets || []).filter((b) => b.kind === "outright"), [bets]);
   const ogTxns = useMemo(() => (txns || []).filter((t) => t.kind === "outright"), [txns]);
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
+  const [added, setAdded] = useState(() => JSON.parse(JSON.stringify(config?.added || {})));
+  const [removed, setRemoved] = useState(() => JSON.parse(JSON.stringify(config?.removed || {})));
+  // markets reflect live edits (odds + added/removed) so changes show immediately
+  const markets = useMemo(() => buildOutrightMarkets({ odds, added, removed }), [odds, added, removed]);
   const [winners, setWinners] = useState(() => ({ ...(result || {}) }));
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false); // 'settle' | 'reset' | false
   const settled = !!result;
   const setOdd = (key, id, val) => setOdds((o) => ({ ...o, [key]: { ...(o[key] || {}), [id]: val } }));
+  const addSel = (key, name, oddsStr) => setAdded((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_add_${uid()}`, label: name, oddsStr: oddsStr || "50/1" }] }));
+  const delSel = (key, id) => {
+    if (id.includes("_add_")) setAdded((a) => ({ ...a, [key]: (a[key] || []).filter((x) => x.id !== id) }));
+    else setRemoved((r) => ({ ...r, [key]: [...new Set([...(r[key] || []), id])] }));
+  };
 
   // distinct "Any other" names players actually typed, per market (with counts)
   const typedNames = useMemo(() => {
@@ -1948,7 +2029,7 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
 
   const saveOdds = async () => {
     setBusy(true);
-    try { await saveConfig(-1, { odds }); showToast("Outright odds saved"); }
+    try { await saveConfig(-1, { odds, added, removed }); showToast("Outright odds & selections saved"); }
     catch (e) { showToast(e.message || "Save failed", "err"); }
     finally { setBusy(false); }
   };
@@ -2073,12 +2154,15 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
         )}
       </div>
 
-      <div className="mb-2 text-sm font-bold">Adjust odds</div>
+      <div className="mb-2 text-sm font-bold">Selections &amp; odds</div>
+      <p className="mb-2 text-[11px] text-stone-500">Edit odds, or <b>add / remove</b> teams &amp; players in the winner markets. The “Any other” catch-all always stays. Tap <b>Save</b> below to publish your changes.</p>
       <div className="space-y-2">
-        {markets.map((mk) => <OddsMarket key={mk.key} mk={mk} odds={odds} setOdd={setOdd} />)}
+        {markets.map((mk) => mk.type === "winner"
+          ? <OutrightWinnerEditor key={mk.key} mk={mk} odds={odds} setOdd={setOdd} onAdd={addSel} onDelete={delSel} />
+          : <OddsMarket key={mk.key} mk={mk} odds={odds} setOdd={setOdd} />)}
       </div>
       <button onClick={saveOdds} disabled={busy} className="mt-4 w-full rounded-xl bg-white/10 py-3 font-bold text-emerald-300 disabled:opacity-50">
-        {busy ? "Saving…" : "Save Outright Odds"}
+        {busy ? "Saving…" : "Save Outright Odds & Selections"}
       </button>
     </div>
   );
@@ -2778,6 +2862,54 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
       <button onClick={save} disabled={busy} className="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
         {busy ? "Saving…" : "Save Odds & Players"}
       </button>
+    </div>
+  );
+}
+
+// Outright winner-market editor: edit odds + add / delete teams & players (catch-all stays)
+function OutrightWinnerEditor({ mk, odds, setOdd, onAdd, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [od, setOd] = useState("");
+  const ph = mk.key === "og_finalists" ? "Team A - Team B"
+    : (mk.key === "og_champion" || mk.key === "og_runnerup") ? "Team name" : "Player name";
+  const add = () => { if (!name.trim()) return; onAdd(mk.key, name.trim(), (od || "").trim() || "50/1"); setName(""); setOd(""); };
+  const named = mk.selections.filter((s) => !s.meta?.other);
+  const other = mk.selections.find((s) => s.meta?.other);
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
+        <span>{mk.icon} {mk.title} <span className="ml-1 text-[10px] font-normal text-stone-500">({named.length})</span></span>
+        <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-white/5 p-3">
+          {named.map((s) => (
+            <div key={s.id} className="flex items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1 text-stone-300">{s.label}</span>
+              <input value={odds[mk.key]?.[s.id] ?? s.oddsStr} onChange={(e) => setOdd(mk.key, s.id, e.target.value)}
+                className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-emerald-300 outline-none focus:border-amber-400/60" />
+              <button onClick={() => onDelete(mk.key, s.id)} title="Remove"
+                className="shrink-0 rounded-md bg-white/5 p-1.5 text-stone-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          ))}
+          {other && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1 text-stone-400">{other.label} <span className="text-[10px] text-stone-600">(catch-all — kept)</span></span>
+              <input value={odds[mk.key]?.[other.id] ?? other.oddsStr} onChange={(e) => setOdd(mk.key, other.id, e.target.value)}
+                className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-emerald-300 outline-none focus:border-amber-400/60" />
+              <span className="w-7 shrink-0" />
+            </div>
+          )}
+          <div className="flex items-center gap-2 border-t border-white/5 pt-2">
+            <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder={ph}
+              className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs outline-none focus:border-emerald-400/50" />
+            <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="50/1"
+              className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-xs text-emerald-300 outline-none focus:border-emerald-400/50" />
+            <button onClick={add} className="shrink-0 rounded-md bg-emerald-400/90 px-2.5 py-1.5 text-xs font-bold text-black">Add</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
