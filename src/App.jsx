@@ -422,12 +422,20 @@ function evaluateItem(item, R) {
     }
     case "ht_score": {
       const s = `${htH}-${htA}`;
-      if (meta.ht === "__OTHER__") return ![ "1-0","2-0","2-1","0-0","1-1","0-1","0-2" ].includes(s);
+      if (meta.ht === "__OTHER__") {
+        const cn = (item.customName || "").replace(/\s/g, "");
+        if (cn) return cn === s; // typed score must match exactly
+        return ![ "1-0","2-0","2-1","0-0","1-1","0-1","0-2" ].includes(s); // legacy fallback
+      }
       return meta.ht === s;
     }
     case "ft_score": {
       const s = `${ftH}-${ftA}`;
-      if (meta.ft === "__OTHER__") return ![ "1-0","2-0","2-1","3-1","0-0","1-1","2-2","0-1","1-2" ].includes(s);
+      if (meta.ft === "__OTHER__") {
+        const cn = (item.customName || "").replace(/\s/g, "");
+        if (cn) return cn === s;
+        return ![ "1-0","2-0","2-1","3-1","0-0","1-1","2-2","0-1","1-2" ].includes(s);
+      }
       return meta.ft === s;
     }
     case "total_goals": {
@@ -601,6 +609,28 @@ function printPicks(bets, title, byPlayer) {
   const w = window.open("", "_blank");
   if (!w) { alert("Please allow pop-ups for this site to download the PDF, then try again."); return; }
   w.document.write(picksHTML(bets, title, byPlayer));
+  w.document.close(); w.focus();
+  setTimeout(() => w.print(), 500);
+}
+
+// transaction-history PDF (ledger = [{date,label,sub,delta}])
+function printLedger(rows, title) {
+  const w = window.open("", "_blank");
+  if (!w) { alert("Please allow pop-ups for this site to download the PDF, then try again."); return; }
+  const plCell = (n) => `<td class="pl ${n >= 0 ? "pos" : "neg"}">${signed(n)}</td>`;
+  let body = `<table><thead><tr><th>Date</th><th>Detail</th><th>Coins +/−</th></tr></thead><tbody>`;
+  let net = 0;
+  rows.forEach((r) => { net += r.delta; body += `<tr><td>${new Date(r.date).toLocaleString()}</td><td><b>${r.label}</b><br><span class="sub2">${r.sub}</span></td>${plCell(r.delta)}</tr>`; });
+  body += `<tr class="grand"><td colspan="2">NET</td>${plCell(net)}</tr></tbody></table>`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#13211c;padding:22px;max-width:760px;margin:auto}
+    h1{font-size:18px;margin:0 0 3px;color:#0b3d2e}.sub-h{color:#6b7a74;font-size:11px;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse;font-size:11px}th{background:#0b3d2e;color:#fff;text-align:left;padding:5px 7px}
+    td{border-bottom:1px solid #e2e8e4;padding:5px 7px;vertical-align:top}.sub2{color:#6b7a74;font-size:10px}
+    .pl{text-align:right;font-weight:700;white-space:nowrap}.pos{color:#0e7c5a}.neg{color:#c0392b}
+    tr.grand td{background:#0b3d2e;color:#fff;font-weight:700;font-size:12px}@media print{@page{margin:12mm}}
+  </style></head><body><h1>🏆 SGA · FIFA WC 2026 — ${title}</h1>
+  <div class="sub-h">Generated ${new Date().toLocaleString()} · Coins are virtual</div>${body}</body></html>`);
   w.document.close(); w.focus();
   setTimeout(() => w.print(), 500);
 }
@@ -793,7 +823,7 @@ export default function App() {
 
           {role === "player" && (
             <>
-              <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
+              <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} myBets={myMatchBets} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
               {tab === "outrights" && <OutrightSlip slip={ogSlip} setSlip={setOgSlip} user={user} placeBet={placeBet} available={ogWallet.net} now={now} showToast={showToast} setTab={setTab} />}
               {tab === "fantasy" && <FantasySlip slip={fmSlip} setSlip={setFmSlip} user={user} placeBet={placeBet} available={wallet.net} showToast={showToast} setTab={setTab} />}
               <BottomNav tab={tab} setTab={(t) => { setTab(t); setActiveMatch(null); }} slipCount={slip.length} ogCount={ogSlip.length} fmCount={fmSlip.length} />
@@ -1066,6 +1096,12 @@ function MatchList({ onOpen, results, configs, now, nickname }) {
 /* ---------- Match detail (markets) ---------- */
 function MatchDetail({ match, config, onBack, slip, setSlip, results, showToast, now }) {
   const markets = useMemo(() => buildMarkets(match, config), [match, config]);
+  // squad players NOT already listed (with odds) in the scorer markets — used for the "Other Player" dropdown
+  const otherScorerOptions = useMemo(() => {
+    const named = new Set(markets.find((m) => m.key === "anytime_scorer").selections
+      .filter((s) => s.meta.scorer !== "__OTHER__").map((s) => s.meta.scorer));
+    return [...(SQUADS[match.home] || []), ...(SQUADS[match.away] || [])].filter((n) => !named.has(n));
+  }, [markets, match]);
   const settled = results[match.n];
   const locked = isLocked(match, now);
   const closing = !settled && !locked ? lockCountdown(match, now) : null;
@@ -1082,6 +1118,7 @@ function MatchDetail({ match, config, onBack, slip, setSlip, results, showToast,
       return [...next, {
         matchId: match.n, match: `${match.home} v ${match.away}`, marketKey: mk.key, marketTitle: mk.title,
         selId: s.id, label: s.label, odds: s.odds, oddsStr: s.oddsStr, meta: s.meta, stake: RULES.min,
+        options: s.meta?.scorer === "__OTHER__" ? otherScorerOptions : undefined,
       }];
     });
   };
@@ -1170,7 +1207,7 @@ function MarketCard({ mk, inSlip, toggle, disabled }) {
 }
 
 /* ---------- Pick slip ---------- */
-function BetSlip({ slip, setSlip, user, placeBet, available, showToast, setTab, setActiveMatch }) {
+function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], showToast, setTab, setActiveMatch }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [placed, setPlaced] = useState(null);
@@ -1192,6 +1229,23 @@ function BetSlip({ slip, setSlip, user, placeBet, available, showToast, setTab, 
     for (const s of slip) {
       if (s.stake < RULES.min) return `Min stake is ${money(RULES.min)} per selection`;
       if (s.stake > RULES.max) return `Max stake is ${money(RULES.max)} per selection`;
+      if (s.meta?.scorer === "__OTHER__" && !(s.customName || "").trim()) return "Choose the player for your “Other Player” pick";
+      if ((s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && !(s.customName || "").trim()) return "Type the score for your “Other Score” pick";
+    }
+    // cap: total stake per match + category (this slip + already-submitted slips) must not exceed the max
+    const submitted = {};
+    (myBets || []).forEach((b) => b.items.forEach((it) => {
+      const k = it.matchId + "|" + it.marketKey;
+      submitted[k] = (submitted[k] || 0) + it.stake;
+    }));
+    const current = {};
+    slip.forEach((s) => { const k = s.matchId + "|" + s.marketKey; current[k] = (current[k] || 0) + s.stake; });
+    for (const k of Object.keys(current)) {
+      const total = current[k] + (submitted[k] || 0);
+      if (total > RULES.max) {
+        const s = slip.find((x) => x.matchId + "|" + x.marketKey === k);
+        return `${s.marketTitle} on ${s.match}: total stake across your slips is ${money(total)} — max is ${money(RULES.max)} per category, per match`;
+      }
     }
     const lockedMatch = [...new Set(slip.map((s) => s.matchId))]
       .map((id) => FIXTURES.find((f) => f.n === id))
@@ -1262,8 +1316,21 @@ function BetSlip({ slip, setSlip, user, placeBet, available, showToast, setTab, 
                     <button onClick={() => remove(s.selId, s.matchId)} className="rounded p-1 text-stone-500 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
                   </div>
                   {s.meta?.scorer === "__OTHER__" && (
+                    Array.isArray(s.options) && s.options.length ? (
+                      <select value={s.customName || ""} onChange={(e) => setCustomName(s.selId, s.matchId, e.target.value)}
+                        className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400">
+                        <option value="">Choose a player…</option>
+                        {s.options.map((n) => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    ) : (
+                      <input value={s.customName || ""} onChange={(e) => setCustomName(s.selId, s.matchId, e.target.value)}
+                        placeholder="Type the player's name"
+                        className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
+                    )
+                  )}
+                  {(s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && (
                     <input value={s.customName || ""} onChange={(e) => setCustomName(s.selId, s.matchId, e.target.value)}
-                      placeholder="Type the player's name"
+                      placeholder="Type the score, e.g. 4-2 (home-away)"
                       className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
                   )}
                   <div className="mt-2 flex items-center justify-between gap-2">
@@ -1467,9 +1534,12 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast
 /* ---------- Fantasy Manager (player) — uses the MATCH wallet ---------- */
 function Fantasy({ config, wallet, results, slip, setSlip, fmBets = [], nickname }) {
   const markets = useMemo(() => buildFantasyMarkets(config), [config]);
+  const live = config?.live || {};
+  const locked = config?.locked || {};
+  const liveMarkets = markets.filter((mk) => live[mk.catKey]);
   const inSlip = (selId) => slip.some((s) => s.selId === selId);
   const toggle = (mk, s) => {
-    if (results[mk.mid]) return; // category already settled
+    if (results[mk.mid] || locked[mk.catKey]) return; // settled or locked
     setSlip((prev) => {
       if (prev.find((x) => x.selId === s.id)) return prev.filter((x) => x.selId !== s.id);
       return [...prev, { matchId: mk.mid, match: `Fantasy — ${mk.title}`, marketKey: mk.key, marketTitle: mk.title, selId: s.id, label: s.label, odds: s.odds, oddsStr: s.oddsStr, meta: s.meta, stake: FANTASY_RULES.min }];
@@ -1482,14 +1552,16 @@ function Fantasy({ config, wallet, results, slip, setSlip, fmBets = [], nickname
         <span className="font-semibold text-emerald-300">Match wallet balance</span>
         <span className="font-bold text-white">{money(wallet.net)}</span>
       </div>
-      <p className="mb-3 text-xs text-stone-500">Stake {money(FANTASY_RULES.min)}–{money(FANTASY_RULES.max)} per pick · paid from your match wallet. A matchday closes once the admin settles it.</p>
+      <p className="mb-3 text-xs text-stone-500">Stake {money(FANTASY_RULES.min)}–{money(FANTASY_RULES.max)} per pick · paid from your match wallet. A matchday closes once it is locked or settled.</p>
       <div className="space-y-3">
-        {markets.map((mk) => {
+        {liveMarkets.length === 0 && <p className="rounded-xl border border-white/10 bg-white/[0.02] py-8 text-center text-sm text-stone-500">No fantasy matchdays are open yet. Check back soon.</p>}
+        {liveMarkets.map((mk) => {
           const settled = results[mk.mid];
+          const isLocked = !!locked[mk.catKey];
           return (
             <div key={mk.key}>
-              {settled && <div className="mb-1 ml-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-400/80">Settled</div>}
-              <MarketCard mk={mk} inSlip={inSlip} toggle={toggle} disabled={!!settled} />
+              {(settled || isLocked) && <div className={`mb-1 ml-1 text-[10px] font-semibold uppercase tracking-wide ${settled ? "text-emerald-400/80" : "text-rose-400/80"}`}>{settled ? "Settled" : "Picks locked"}</div>}
+              <MarketCard mk={mk} inSlip={inSlip} toggle={toggle} disabled={!!settled || isLocked} />
             </div>
           );
         })}
@@ -1634,11 +1706,19 @@ function MyBets({ bets, wallet, nickname, txns }) {
         <Stat label="Net Balance" v={money(wallet.net)} good={wallet.net >= 0} />
       </div>
 
-      <button onClick={() => setShowHist(!showHist)}
-        className="mb-4 flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-stone-300">
-        <span className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-300" /> Transaction History ({ledger.length})</span>
-        <ChevronRight className={`h-4 w-4 transition ${showHist ? "rotate-90" : ""}`} />
-      </button>
+      <div className="mb-4 flex items-center gap-2">
+        <button onClick={() => setShowHist(!showHist)}
+          className="flex flex-1 items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-stone-300">
+          <span className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-300" /> Transaction History ({ledger.length})</span>
+          <ChevronRight className={`h-4 w-4 transition ${showHist ? "rotate-90" : ""}`} />
+        </button>
+        {ledger.length > 0 && (
+          <button onClick={() => printLedger(ledger, `${nickname} — Transaction History`)}
+            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2.5 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+            <Receipt className="h-3.5 w-3.5" /> PDF
+          </button>
+        )}
+      </div>
       {showHist && (
         <div className="mb-4 space-y-1.5">
           {ledger.length === 0 && <p className="py-4 text-center text-xs text-stone-500">No transactions yet.</p>}
@@ -2008,6 +2088,8 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
 function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetFantasy, showToast }) {
   const [managers, setManagers] = useState(() => (config?.managers?.length ? config.managers : FM_DEFAULT_MANAGERS).map((m) => ({ ...m })));
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
+  const [live, setLive] = useState(() => ({ ...(config?.live || {}) }));
+  const [locked, setLocked] = useState(() => ({ ...(config?.locked || {}) }));
   const [busy, setBusy] = useState(false);
   const [openCat, setOpenCat] = useState(null);
   const [confirm, setConfirm] = useState(null); // { mid, label }
@@ -2020,10 +2102,17 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
   const delMgr = (i) => setManagers((m) => m.filter((_, j) => j !== i));
   const setOdd = (catKey, mgrId, val) => setOdds((o) => ({ ...o, [catKey]: { ...(o[catKey] || {}), [mgrId]: val } }));
 
+  const cleanManagers = () => managers.filter((m) => (m.name || "").trim()).map((m) => ({ id: m.id, name: m.name.trim() }));
+  const persistFlags = async (nextLive, nextLocked) => {
+    try { await saveConfig(-2, { managers: cleanManagers(), odds, live: nextLive, locked: nextLocked }); }
+    catch (e) { showToast(e.message || "Save failed", "err"); }
+  };
+  const toggleLive = (k) => { const next = { ...live, [k]: !live[k] }; setLive(next); persistFlags(next, locked); };
+  const toggleLock = (k) => { const next = { ...locked, [k]: !locked[k] }; setLocked(next); persistFlags(live, next); };
+
   const saveSetup = async () => {
-    const clean = managers.filter((m) => (m.name || "").trim()).map((m) => ({ id: m.id, name: m.name.trim() }));
     setBusy(true);
-    try { await saveConfig(-2, { managers: clean, odds }); showToast("Fantasy managers & odds saved"); }
+    try { await saveConfig(-2, { managers: cleanManagers(), odds, live, locked }); showToast("Fantasy managers & odds saved"); }
     catch (e) { showToast(e.message || "Save failed", "err"); }
     finally { setBusy(false); }
   };
@@ -2076,6 +2165,31 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Go live & locks */}
+      <div className="mb-2 text-sm font-bold">Go live &amp; picks lock</div>
+      <p className="mb-2 text-[11px] text-stone-500">Players only see matchdays you set <b>Live</b>. Set <b>Locked</b> to stop new picks (e.g. at kickoff) without settling. Saved instantly.</p>
+      <div className="mb-4 space-y-1.5">
+        {FM_CATS.map((cat) => {
+          const settled = results[cat.mid];
+          return (
+            <div key={cat.key} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                {cat.label}
+                {settled && <span className="ml-1.5 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">SETTLED</span>}
+              </span>
+              <button onClick={() => toggleLive(cat.key)}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${live[cat.key] ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>
+                {live[cat.key] ? "Live" : "Draft"}
+              </button>
+              <button onClick={() => toggleLock(cat.key)} disabled={!live[cat.key]}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${locked[cat.key] ? "bg-rose-500 text-white" : "bg-white/5 text-stone-400"}`}>
+                {locked[cat.key] ? "Locked" : "Open"}
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Odds per matchday */}
@@ -2322,26 +2436,44 @@ function MatchPicker({ results, configs, onPick, manage }) {
 function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, bets, showToast }) {
   const prev = results[match.n];
   const customSpecials = (config?.specials || []).filter((s) => (s.label || "").trim());
+  const squadHome = SQUADS[match.home] || [];
+  const squadAway = SQUADS[match.away] || [];
+  const squadSet = useMemo(() => new Set([...squadHome, ...squadAway]), [match]);
+  const prevFirst = prev?.scorers?.[0] || "";
   const [r, setR] = useState(prev
-    ? { ...prev, scorers: Array.isArray(prev.scorers) ? prev.scorers.join(", ") : (prev.scorers || ""), customSpecials: prev.customSpecials || {} }
+    ? {
+        ...prev, customSpecials: prev.customSpecials || {},
+        firstScorer: prevFirst ? (squadSet.has(prevFirst) ? prevFirst : "__other__") : "",
+        firstOther: prevFirst && !squadSet.has(prevFirst) ? prevFirst : "",
+        anytime: Array.isArray(prev.scorers) ? [...prev.scorers] : [],
+      }
     : {
         ht: { h: 0, a: 0 }, ft: { h: 0, a: 0 }, firstGoalMinute: 10, firstGoalMethod: "rf",
-        totalCards: 2, scorers: "",
+        totalCards: 2, firstScorer: "", firstOther: "", anytime: [],
         wfbH: false, wfbA: false, bhH: false, bhA: false, ownGoalH: false, ownGoalA: false,
         customSpecials: {},
       });
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false); // 'settle' | 'reset' | false
+  const [anytimeText, setAnytimeText] = useState("");
   const num = (v) => Math.max(0, parseInt(v) || 0);
   const toggleSpecial = (cid) => setR((x) => ({ ...x, customSpecials: { ...(x.customSpecials || {}), [cid]: !x.customSpecials?.[cid] } }));
+  const addAnytime = (name) => { name = (name || "").trim(); if (!name) return; setR((x) => x.anytime?.includes(name) ? x : { ...x, anytime: [...(x.anytime || []), name] }); };
+  const removeAnytime = (name) => setR((x) => ({ ...x, anytime: (x.anytime || []).filter((n) => n !== name) }));
 
   // how many slips / players this match touches
   const affected = (bets || []).filter((b) => b.kind !== "outright" && b.items.some((it) => it.matchId === match.n));
   const affectedPlayers = new Set(affected.map((b) => b.user)).size;
 
+  const buildScorers = () => {
+    const first = (r.firstScorer === "__other__" ? r.firstOther : r.firstScorer || "").trim();
+    let list = [...(r.anytime || [])];
+    if (first) list = [first, ...list.filter((n) => n !== first)]; // first scorer leads the ordered list
+    return list;
+  };
+
   const settle = async () => {
-    const scorers = Array.isArray(r.scorers) ? r.scorers : String(r.scorers).split(",").map((s) => s.trim()).filter(Boolean);
-    const R = { ...r, scorers };
+    const R = { ...r, scorers: buildScorers() };
     setBusy(true);
     try {
       await settleMatch(match.n, R);
@@ -2389,9 +2521,50 @@ function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, b
         </AdminField>
       </div>
 
-      <AdminField label="Goal Scorers in order (comma separated — first name decides First Scorer)">
-        <input value={r.scorers} onChange={(e) => setR({ ...r, scorers: e.target.value })} placeholder="e.g. Vinicius Jr, Modric" className={ipt} />
-      </AdminField>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <AdminField label="First Goal Scorer">
+          <select value={r.firstScorer} onChange={(e) => setR({ ...r, firstScorer: e.target.value })} className={ipt}>
+            <option value="">— none / no goal —</option>
+            <optgroup label={match.home}>{squadHome.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <optgroup label={match.away}>{squadAway.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <option value="__other__">Other (type a name)…</option>
+          </select>
+          {r.firstScorer === "__other__" && (
+            <input value={r.firstOther || ""} onChange={(e) => setR({ ...r, firstOther: e.target.value })}
+              placeholder="Type the first scorer's name" className={`${ipt} mt-2`} />
+          )}
+        </AdminField>
+        <AdminField label="Add Anytime Goal Scorers">
+          <select value="" onChange={(e) => { if (e.target.value) { addAnytime(e.target.value); e.target.value = ""; } }} className={ipt}>
+            <option value="">Pick a player to add…</option>
+            <optgroup label={match.home}>{squadHome.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <optgroup label={match.away}>{squadAway.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+          </select>
+          <div className="mt-2 flex gap-2">
+            <input value={anytimeText} onChange={(e) => setAnytimeText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { addAnytime(anytimeText); setAnytimeText(""); } }}
+              placeholder="…or type another name" className={ipt} />
+            <button type="button" onClick={() => { addAnytime(anytimeText); setAnytimeText(""); }}
+              className="shrink-0 rounded-xl bg-emerald-400/90 px-3 text-sm font-bold text-black">Add</button>
+          </div>
+        </AdminField>
+      </div>
+      <div className="mt-2 rounded-xl bg-black/20 p-3">
+        <div className="mb-1.5 text-[11px] text-stone-400">Goal scorers <span className="text-stone-600">(the First Scorer is added automatically and leads the list)</span></div>
+        <div className="flex flex-wrap gap-2">
+          {(() => {
+            const first = (r.firstScorer === "__other__" ? r.firstOther : r.firstScorer || "").trim();
+            const list = first ? [first, ...(r.anytime || []).filter((n) => n !== first)] : (r.anytime || []);
+            if (!list.length) return <span className="text-xs text-stone-600">No scorers yet.</span>;
+            return list.map((n, i) => (
+              <span key={n + i} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${i === 0 && first ? "bg-amber-400/90 text-black" : "bg-white/10 text-stone-200"}`}>
+                {i === 0 && first && <span className="text-[9px] uppercase">1st</span>}{n}
+                {n !== first && <button type="button" onClick={() => removeAnytime(n)} className="text-stone-500 hover:text-rose-300"><X className="h-3 w-3" /></button>}
+              </span>
+            ));
+          })()}
+        </div>
+      </div>
 
       <div className="mt-3 rounded-xl bg-black/20 p-3">
         <div className="mb-2 text-xs font-semibold text-stone-400">Per-team outcomes <span className="text-stone-600">(clean sheet is auto-detected from the score)</span></div>
@@ -2618,12 +2791,12 @@ function OddsMarket({ mk, odds, setOdd }) {
         <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
       </button>
       {open && (
-        <div className="grid grid-cols-2 gap-2 border-t border-white/5 p-3">
+        <div className="space-y-2 border-t border-white/5 p-3">
           {mk.selections.map((s) => (
-            <label key={s.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="min-w-0 flex-1 truncate text-stone-300">{s.label}</span>
+            <label key={s.id} className="flex items-center justify-between gap-3 text-xs">
+              <span className="min-w-0 flex-1 text-stone-300">{s.label}</span>
               <input value={odds[mk.key]?.[s.id] ?? s.oddsStr} onChange={(e) => setOdd(mk.key, s.id, e.target.value)}
-                className="w-16 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-center text-emerald-300 outline-none focus:border-amber-400/60" />
+                className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-emerald-300 outline-none focus:border-amber-400/60" />
             </label>
           ))}
         </div>
