@@ -477,28 +477,26 @@ const stripPlayer = (p) => p.trim().toLowerCase();
 
 // recompute a slip purely from the current results map (idempotent & reversible).
 // an item is open until its match has a result; the slip pays out only if every item won.
+// Each selection settles independently (singles). A slip stays open until all its
+// selections are decided; then it pays the sum of the winning selections' returns.
 function recomputeBet(bet, resultsMap) {
+  const anyOpen = bet.items.some((it) => !resultsMap[it.matchId]);
+  if (anyOpen) return { items: bet.items.map((it) => ({ ...it, status: "open" })), status: "open", payout: 0 };
+  let payout = 0, anyWon = false;
   const items = bet.items.map((it) => {
-    const R = resultsMap[it.matchId];
-    if (!R) return { ...it, status: "open" };
-    return { ...it, status: evaluateItem(it, R) ? "won" : "lost" };
+    const won = evaluateItem(it, resultsMap[it.matchId]);
+    if (won) { payout += it.stake * it.odds; anyWon = true; }
+    return { ...it, status: won ? "won" : "lost" };
   });
-  const anyOpen = items.some((it) => it.status === "open");
-  let status = "open", payout = 0;
-  if (!anyOpen) {
-    const lost = items.some((it) => it.status === "lost");
-    status = lost ? "lost" : "won";
-    payout = lost ? 0 : items.reduce((a, it) => a + it.stake * it.odds, 0);
-  }
-  return { items, status, payout };
+  return { items, status: anyWon ? "won" : "lost", payout: anyWon ? payout : 0 };
 }
 
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
 const matchName = (id) => { if (+id === -1) return "Tournament Outrights"; const fc = FM_CATS.find((c) => c.mid === +id); if (fc) return `Fantasy Manager — ${fc.label}`; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
 const fmtN = (n) => Math.round(n).toLocaleString();
 const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
-// realized profit/loss for one selection: won slip → stake×(odds−1); lost slip → −stake; open → 0 (pending)
-const itemPL = (bet, it) => bet.status === "won" ? it.stake * (it.odds - 1) : bet.status === "lost" ? -it.stake : 0;
+// realized profit/loss for one selection: won → stake×(odds−1); lost → −stake; open → 0 (pending)
+const itemPL = (bet, it) => it.status === "won" ? it.stake * (it.odds - 1) : it.status === "lost" ? -it.stake : 0;
 
 function downloadFile(name, content, mime) {
   const blob = new Blob([content], { type: mime });
