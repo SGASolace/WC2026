@@ -157,6 +157,10 @@ const db = {
       .upsert({ match_no: matchNo, payload, settled_by: userId, settled_at: new Date().toISOString() });
     if (error) throw error;
   },
+  async deleteResult(matchNo) {
+    const { error } = await supabase.from("results").delete().eq("match_no", matchNo);
+    if (error) throw error;
+  },
   async updateBet(id, patch) {
     const { error } = await supabase.from("bets").update(patch).eq("id", id);
     if (error) throw error;
@@ -393,6 +397,24 @@ function evaluateItem(item, R) {
 }
 const stripPlayer = (p) => p.trim().toLowerCase();
 
+// recompute a slip purely from the current results map (idempotent & reversible).
+// an item is open until its match has a result; the slip pays out only if every item won.
+function recomputeBet(bet, resultsMap) {
+  const items = bet.items.map((it) => {
+    const R = resultsMap[it.matchId];
+    if (!R) return { ...it, status: "open" };
+    return { ...it, status: evaluateItem(it, R) ? "won" : "lost" };
+  });
+  const anyOpen = items.some((it) => it.status === "open");
+  let status = "open", payout = 0;
+  if (!anyOpen) {
+    const lost = items.some((it) => it.status === "lost");
+    status = lost ? "lost" : "won";
+    payout = lost ? 0 : items.reduce((a, it) => a + it.stake * it.odds, 0);
+  }
+  return { items, status, payout };
+}
+
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
 const matchName = (id) => { if (+id === -1) return "Tournament Outrights"; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
 const fmtN = (n) => Math.round(n).toLocaleString();
@@ -599,32 +621,34 @@ export default function App() {
     const match = FIXTURES.find((f) => f.n === matchNo);
     const R = { ...R0, knownScorers: knownScorerNames(match, configs[matchNo]) };
     await db.upsertResult(matchNo, R, session.user.id);
-    const affected = bets.filter((b) => b.status === "open" && b.kind !== "outright" && b.items.some((it) => it.matchId === matchNo));
-    for (const b of affected) {
-      const items = b.items.map((it) => it.matchId === matchNo ? { ...it, status: evaluateItem(it, R) ? "won" : "lost" } : it);
-      const decided = items.every((it) => it.status !== "open");
-      let status = b.status, payout = b.payout;
-      if (decided) {
-        const lost = items.some((it) => it.status === "lost");
-        status = lost ? "lost" : "won";
-        payout = lost ? 0 : items.reduce((a, it) => a + it.stake * it.odds, 0);
-      }
-      await db.updateBet(b.id, { items, status, payout });
-    }
+    const newResults = { ...results, [matchNo]: R };
+    const affected = bets.filter((b) => b.kind !== "outright" && b.items.some((it) => it.matchId === matchNo));
+    for (const b of affected) await db.updateBet(b.id, recomputeBet(b, newResults));
+    await refresh();
+  };
+
+  const resetMatch = async (matchNo) => {
+    await db.deleteResult(matchNo);
+    const newResults = { ...results }; delete newResults[matchNo];
+    const affected = bets.filter((b) => b.kind !== "outright" && b.items.some((it) => it.matchId === matchNo));
+    for (const b of affected) await db.updateBet(b.id, recomputeBet(b, newResults));
     await refresh();
   };
 
   // settle outrights: R holds the winning selection id per market (og_champion, og_runnerup, ...)
   const settleOutright = async (R) => {
     await db.upsertResult(-1, R, session.user.id);
-    const affected = bets.filter((b) => b.status === "open" && b.kind === "outright");
-    for (const b of affected) {
-      const items = b.items.map((it) => ({ ...it, status: evaluateItem(it, R) ? "won" : "lost" }));
-      const lost = items.some((it) => it.status === "lost");
-      const status = lost ? "lost" : "won";
-      const payout = lost ? 0 : items.reduce((a, it) => a + it.stake * it.odds, 0);
-      await db.updateBet(b.id, { items, status, payout });
-    }
+    const newResults = { ...results, [-1]: R };
+    const affected = bets.filter((b) => b.kind === "outright");
+    for (const b of affected) await db.updateBet(b.id, recomputeBet(b, newResults));
+    await refresh();
+  };
+
+  const resetOutright = async () => {
+    await db.deleteResult(-1);
+    const newResults = { ...results }; delete newResults[-1];
+    const affected = bets.filter((b) => b.kind === "outright");
+    for (const b of affected) await db.updateBet(b.id, recomputeBet(b, newResults));
     await refresh();
   };
 
@@ -654,7 +678,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} settleOutright={settleOutright} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} />}
@@ -1510,7 +1534,7 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, settleOutright, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players
   const [pick, setPick] = useState(null);
   const totals = bets.reduce((a, b) => { a.stake += b.totalStake; if (b.status === "won") a.payout += b.payout || 0; return a; }, { stake: 0, payout: 0 });
@@ -1561,7 +1585,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
           {!pick ? (
             <MatchPicker results={results} onPick={setPick} />
           ) : (
-            <SettleForm match={pick} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} showToast={showToast} />
+            <SettleForm match={pick} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} resetMatch={resetMatch} bets={bets} showToast={showToast} />
           )}
         </>
       ) : mode === "manage" ? (
@@ -1574,7 +1598,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
           )}
         </>
       ) : mode === "outrights" ? (
-        <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} txns={txns} saveConfig={saveConfig} settleOutright={settleOutright} showToast={showToast} />
+        <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} txns={txns} saveConfig={saveConfig} settleOutright={settleOutright} resetOutright={resetOutright} showToast={showToast} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
       )}
@@ -1583,13 +1607,15 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
 }
 
 /* ---------- Admin: outrights (edit odds + settle winners) ---------- */
-function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright, showToast }) {
+function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright, resetOutright, showToast }) {
   const markets = useMemo(() => buildOutrightMarkets(config), [config]);
   const ogBets = useMemo(() => (bets || []).filter((b) => b.kind === "outright"), [bets]);
   const ogTxns = useMemo(() => (txns || []).filter((t) => t.kind === "outright"), [txns]);
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
   const [winners, setWinners] = useState(() => ({ ...(result || {}) }));
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false); // 'settle' | 'reset' | false
+  const settled = !!result;
   const setOdd = (key, id, val) => setOdds((o) => ({ ...o, [key]: { ...(o[key] || {}), [id]: val } }));
 
   // distinct "Any other" names players actually typed, per market (with counts)
@@ -1620,8 +1646,14 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
       }
     }
     setBusy(true);
-    try { await settleOutright(winners); showToast("Outrights settled & paid out"); }
+    try { await settleOutright(winners); showToast("Outrights settled & paid out"); setConfirm(false); }
     catch (e) { showToast(e.message || "Settle failed", "err"); }
+    finally { setBusy(false); }
+  };
+  const reset = async () => {
+    setBusy(true);
+    try { await resetOutright(); showToast("Outrights reset — picks reopened"); setConfirm(false); }
+    catch (e) { showToast(e.message || "Reset failed", "err"); }
     finally { setBusy(false); }
   };
 
@@ -1685,9 +1717,36 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
           );})}
         </div>
         <p className="mt-2 text-[11px] text-stone-500">For “Any other”, type the real winner — players who chose “Any other” pay out only if their typed name matches.</p>
-        <button onClick={settle} disabled={busy} className="mt-3 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
-          {busy ? "Working…" : "Settle Outrights & Pay Out"}
-        </button>
+        {!confirm ? (
+          <div className="mt-3 space-y-2">
+            <button onClick={() => setConfirm("settle")} disabled={busy} className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
+              {settled ? "Review & Re-settle Outrights" : "Review & Settle Outrights"}
+            </button>
+            {settled && (
+              <button onClick={() => setConfirm("reset")} disabled={busy} className="w-full rounded-xl bg-rose-500/15 py-3 font-bold text-rose-200 hover:bg-rose-500/25 disabled:opacity-50">
+                Reset / Unsettle Outrights
+              </button>
+            )}
+          </div>
+        ) : confirm === "settle" ? (
+          <div className="mt-3 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3">
+            <div className="mb-1 font-bold text-amber-100">Confirm — settle {ogBets.length} outright slip{ogBets.length === 1 ? "" : "s"}?</div>
+            <div className="text-[12px] text-stone-300">Winning picks pay out; everything not matching the declared winners is marked lost.</div>
+            <div className="mt-2 flex gap-2">
+              <button onClick={settle} disabled={busy} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-2.5 font-bold text-black disabled:opacity-50">{busy ? "Working…" : "Confirm & Pay Out"}</button>
+              <button onClick={() => setConfirm(false)} disabled={busy} className="rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-stone-300">Back</button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3">
+            <div className="mb-1 font-bold text-rose-100">Reset outrights?</div>
+            <div className="text-[12px] text-stone-300">Removes the declared winners and reopens all {ogBets.length} outright slip{ogBets.length === 1 ? "" : "s"} (payouts undone).</div>
+            <div className="mt-2 flex gap-2">
+              <button onClick={reset} disabled={busy} className="flex-1 rounded-xl bg-rose-500 py-2.5 font-bold text-white disabled:opacity-50">{busy ? "Resetting…" : "Confirm Reset"}</button>
+              <button onClick={() => setConfirm(false)} disabled={busy} className="rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-stone-300">Back</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mb-2 text-sm font-bold">Adjust odds</div>
@@ -1840,7 +1899,7 @@ function MatchPicker({ results, configs, onPick, manage }) {
   );
 }
 
-function SettleForm({ match, onBack, results, settleMatch, showToast }) {
+function SettleForm({ match, onBack, results, settleMatch, resetMatch, bets, showToast }) {
   const prev = results[match.n];
   const [r, setR] = useState(prev
     ? { ...prev, scorers: Array.isArray(prev.scorers) ? prev.scorers.join(", ") : (prev.scorers || "") }
@@ -1850,7 +1909,12 @@ function SettleForm({ match, onBack, results, settleMatch, showToast }) {
         wfbH: false, wfbA: false, bhH: false, bhA: false, ownGoalH: false, ownGoalA: false,
       });
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false); // 'settle' | 'reset' | false
   const num = (v) => Math.max(0, parseInt(v) || 0);
+
+  // how many slips / players this match touches
+  const affected = (bets || []).filter((b) => b.kind !== "outright" && b.items.some((it) => it.matchId === match.n));
+  const affectedPlayers = new Set(affected.map((b) => b.user)).size;
 
   const settle = async () => {
     const scorers = Array.isArray(r.scorers) ? r.scorers : String(r.scorers).split(",").map((s) => s.trim()).filter(Boolean);
@@ -1861,6 +1925,15 @@ function SettleForm({ match, onBack, results, settleMatch, showToast }) {
       showToast(`Settled ${match.home} ${R.ft.h}–${R.ft.a} ${match.away}`);
       onBack();
     } catch (e) { showToast(e.message || "Settlement failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+  const reset = async () => {
+    setBusy(true);
+    try {
+      await resetMatch(match.n);
+      showToast(`Reset ${match.home} v ${match.away} — picks reopened`);
+      onBack();
+    } catch (e) { showToast(e.message || "Reset failed (admin only)", "err"); }
     finally { setBusy(false); }
   };
 
@@ -1905,9 +1978,46 @@ function SettleForm({ match, onBack, results, settleMatch, showToast }) {
           <div className="flex flex-wrap gap-2"><Toggle k="wfbA" lbl="Win From Behind" /><Toggle k="bhA" lbl="Both Halves" /><Toggle k="ownGoalA" lbl="Own Goal" /></div></div>
       </div>
 
-      <button onClick={settle} disabled={busy} className="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
-        {busy ? "Settling…" : prev ? "Re-settle Match" : "Settle Match & Pay Out"}
-      </button>
+      {prev && (
+        <div className="mt-4 rounded-xl border border-sky-400/30 bg-sky-500/10 p-3 text-[11px] text-sky-200">
+          Already settled {prev.ft.h}–{prev.ft.a}. Re-settling recalculates every affected pick from your new entries; Reset reopens them.
+        </div>
+      )}
+
+      {!confirm ? (
+        <div className="mt-5 space-y-2">
+          <button onClick={() => setConfirm("settle")} disabled={busy} className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
+            {prev ? "Review & Re-settle" : "Review & Settle"}
+          </button>
+          {prev && (
+            <button onClick={() => setConfirm("reset")} disabled={busy} className="w-full rounded-xl bg-rose-500/15 py-3 font-bold text-rose-200 hover:bg-rose-500/25 disabled:opacity-50">
+              Reset / Unsettle this match
+            </button>
+          )}
+        </div>
+      ) : confirm === "settle" ? (
+        <div className="mt-5 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4">
+          <div className="mb-1 font-bold text-amber-100">Confirm settlement</div>
+          <div className="space-y-0.5 text-sm text-stone-200">
+            <div>Full-time: <b>{match.home} {r.ft.h}–{r.ft.a} {match.away}</b> · HT {r.ht.h}–{r.ht.a}</div>
+            <div>First goal: {r.firstGoalMinute === 0 ? "no goal" : `${r.firstGoalMinute}' (${r.firstGoalMethod})`} · Cards {r.totalCards}</div>
+            <div className="text-[12px] text-stone-400">This will pay out / decide <b>{affected.length}</b> pick slip{affected.length === 1 ? "" : "s"} across <b>{affectedPlayers}</b> player{affectedPlayers === 1 ? "" : "s"}.</div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={settle} disabled={busy} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-2.5 font-bold text-black disabled:opacity-50">{busy ? "Settling…" : "Confirm & Pay Out"}</button>
+            <button onClick={() => setConfirm(false)} disabled={busy} className="rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-stone-300">Back</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-xl border border-rose-400/40 bg-rose-500/10 p-4">
+          <div className="mb-1 font-bold text-rose-100">Reset this match?</div>
+          <div className="text-sm text-stone-200">This removes the result and reopens <b>{affected.length}</b> pick slip{affected.length === 1 ? "" : "s"} (won/lost are reverted to open, payouts undone). You can settle again afterwards.</div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={reset} disabled={busy} className="flex-1 rounded-xl bg-rose-500 py-2.5 font-bold text-white disabled:opacity-50">{busy ? "Resetting…" : "Confirm Reset"}</button>
+            <button onClick={() => setConfirm(false)} disabled={busy} className="rounded-xl bg-white/10 px-4 py-2.5 text-sm font-semibold text-stone-300">Back</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
