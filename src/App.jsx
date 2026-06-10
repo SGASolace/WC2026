@@ -193,7 +193,7 @@ const db = {
   },
   async addTransaction(t, userId) {
     const { error } = await supabase.from("transactions")
-      .insert({ user_id: t.user_id, nickname: t.nickname, deposit: t.deposit, bonus: t.bonus, created_by: userId, kind: t.kind || "match" });
+      .insert({ user_id: t.user_id, nickname: t.nickname, deposit: t.deposit, bonus: t.bonus, created_by: userId, kind: t.kind || "match", note: t.note || "" });
     if (error) throw error;
   },
 };
@@ -438,15 +438,15 @@ function exportPicksCSV(bets, filename, byPlayer) {
 }
 
 function exportTransactionsCSV(txns, filename) {
-  const head = ["Date", "Player", "Deposit (Coins)", "Bonus (Coins)", "Total (Coins)"];
+  const head = ["Date", "Player", "Wallet", "Note", "Deposit (Coins)", "Bonus (Coins)", "Total (Coins)"];
   const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = [head.map(esc).join(",")];
   let d = 0, bo = 0;
   txns.forEach((t) => {
     d += Number(t.deposit); bo += Number(t.bonus);
-    lines.push([new Date(t.created_at).toLocaleString(), t.nickname, Math.round(t.deposit), Math.round(t.bonus), Math.round(Number(t.deposit) + Number(t.bonus))].map(esc).join(","));
+    lines.push([new Date(t.created_at).toLocaleString(), t.nickname, t.kind === "outright" ? "Outright" : "Match", t.note || "", Math.round(t.deposit), Math.round(t.bonus), Math.round(Number(t.deposit) + Number(t.bonus))].map(esc).join(","));
   });
-  lines.push(["", "TOTAL", Math.round(d), Math.round(bo), Math.round(d + bo)].map(esc).join(","));
+  lines.push(["", "TOTAL", "", "", Math.round(d), Math.round(bo), Math.round(d + bo)].map(esc).join(","));
   downloadFile(filename, "\ufeff" + lines.join("\n"), "text/csv;charset=utf-8");
 }
 
@@ -584,14 +584,14 @@ export default function App() {
 
   const placeBet = async (bet) => { await db.insertBet(bet, session.user.id); await refresh(); };
   const saveConfig = async (matchNo, config) => { await db.saveConfig(matchNo, config, session.user.id); await refresh(); };
-  const creditPlayer = async (player, addDeposit, addBonus) => {
+  const creditPlayer = async (player, addDeposit, addBonus, note) => {
     await db.creditPlayer(player.id, Number(player.deposit || 0) + addDeposit, Number(player.bonus || 0) + addBonus);
-    await db.addTransaction({ user_id: player.id, nickname: player.nickname, deposit: addDeposit, bonus: addBonus, kind: "match" }, session.user.id);
+    await db.addTransaction({ user_id: player.id, nickname: player.nickname, deposit: addDeposit, bonus: addBonus, kind: "match", note }, session.user.id);
     await refresh();
   };
-  const creditPlayerOg = async (player, addDeposit, addBonus) => {
+  const creditPlayerOg = async (player, addDeposit, addBonus, note) => {
     await db.creditPlayerOg(player.id, Number(player.og_deposit || 0) + addDeposit, Number(player.og_bonus || 0) + addBonus);
-    await db.addTransaction({ user_id: player.id, nickname: player.nickname, deposit: addDeposit, bonus: addBonus, kind: "outright" }, session.user.id);
+    await db.addTransaction({ user_id: player.id, nickname: player.nickname, deposit: addDeposit, bonus: addBonus, kind: "outright", note }, session.user.id);
     await refresh();
   };
 
@@ -1349,11 +1349,15 @@ function MyBets({ bets, wallet, nickname, txns }) {
 
   const ledger = useMemo(() => {
     const rows = [];
-    (txns || []).forEach((t) => rows.push({
-      date: t.created_at, kind: "credit", label: "Coins added by admin",
-      sub: `Deposit ${fmtN(t.deposit)}${Number(t.bonus) ? ` + ${fmtN(t.bonus)} bonus` : ""}`,
-      delta: Number(t.deposit) + Number(t.bonus),
-    }));
+    (txns || []).filter((t) => (t.kind || "match") !== "outright").forEach((t) => {
+      const total = Number(t.deposit) + Number(t.bonus);
+      rows.push({
+        date: t.created_at, kind: "credit",
+        label: total >= 0 ? "Coins added by admin" : "Coins extracted by admin",
+        sub: `${t.note ? t.note + " · " : ""}${total >= 0 ? `Deposit ${fmtN(t.deposit)}${Number(t.bonus) ? ` + ${fmtN(t.bonus)} bonus` : ""}` : `−${fmtN(Math.abs(t.deposit))}`}`,
+        delta: total,
+      });
+    });
     bets.forEach((b) => {
       rows.push({ date: b.ts, kind: "stake", label: `Pick ${b.code}`, sub: `${b.items.length} selections placed`, delta: -b.totalStake });
       if (b.status === "won") rows.push({ date: b.ts, kind: "win", label: `Won ${b.code}`, sub: "Returned to balance", delta: b.payout || 0 });
@@ -1723,75 +1727,82 @@ function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, showT
   );
 }
 
+function CreditBlock({ title, color, wallet, onCredit, onExtract, showToast }) {
+  const [amt, setAmt] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const a = Math.max(0, parseFloat(amt) || 0), bonus = a * bonusPct(a) / 100;
+  const run = async (fn, label) => {
+    if (a <= 0) { showToast("Enter an amount", "err"); return; }
+    setBusy(true);
+    try { await fn(); setAmt(""); }
+    catch (e) { showToast(e.message || "Failed", "err"); }
+    finally { setBusy(false); }
+  };
+  const credit = () => run(() => onCredit(a, bonus, note || "Credit"));
+  const extract = () => run(() => onExtract(a, note || "Withdrawal"));
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between text-[11px]">
+        <span className={`font-semibold ${color}`}>{title}</span>
+        <span className="text-stone-400">Net <b className={wallet.net >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(wallet.net)}</b></span>
+      </div>
+      <div className="mb-2 grid grid-cols-5 gap-1.5 text-center text-[10px]">
+        {[["Dep", wallet.deposit], ["Bonus", wallet.bonus], ["In", wallet.inBets], ["Won", wallet.won], ["Lost", wallet.lost]].map(([k, v]) => (
+          <div key={k} className="rounded-lg bg-black/20 px-1 py-1.5"><div className="text-stone-500">{k}</div><div className="font-semibold text-white">{fmtN(v)}</div></div>
+        ))}
+      </div>
+      <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="Amount" className={ipt} />
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {["Advance (R)", "Credit (C)", "Adjustment"].map((n) => (
+          <button key={n} onClick={() => setNote(n)} className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${note === n ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-300"}`}>{n}</button>
+        ))}
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" className="min-w-[90px] flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-[11px] outline-none focus:border-emerald-400/50" />
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button onClick={credit} disabled={busy} className="flex-1 rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-50">{busy ? "…" : "Add / Credit"}</button>
+        <button onClick={extract} disabled={busy} className="flex-1 rounded-lg bg-rose-500/20 px-3 py-2 text-sm font-bold text-rose-200 hover:bg-rose-500/30 disabled:opacity-50">Extract Coin</button>
+      </div>
+      {a > 0 && <p className="mt-1 text-[11px] text-stone-400">Add credits <span className="text-emerald-300">+{money(a + bonus)}</span>{bonusPct(a) ? ` (incl. ${bonusPct(a)}% bonus +${money(bonus)})` : " (no bonus under 10,000)"} · Extract removes <span className="text-rose-300">−{money(a)}</span></p>}
+    </div>
+  );
+}
+
 function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerOg, showToast }) {
   const w = walletOf(p, myBets);
   const og = walletOg(p, myOgBets);
-  const [amt, setAmt] = useState("");
-  const [ogAmt, setOgAmt] = useState("");
-  const [busy, setBusy] = useState(false);
   const [showHist, setShowHist] = useState(false);
-  const a = Math.max(0, parseFloat(amt) || 0), b2 = a * bonusPct(a) / 100;
-  const oa = Math.max(0, parseFloat(ogAmt) || 0), ob = oa * bonusPct(oa) / 100;
-
-  const addMatch = async () => {
-    if (a <= 0) { showToast("Enter an amount", "err"); return; }
-    setBusy(true);
-    try { await creditPlayer(p, a, b2); showToast(`Match wallet +${money(a)} (+${money(b2)} bonus) → ${p.nickname}`); setAmt(""); }
-    catch (e) { showToast(e.message || "Failed", "err"); } finally { setBusy(false); }
-  };
-  const addOg = async () => {
-    if (oa <= 0) { showToast("Enter an amount", "err"); return; }
-    setBusy(true);
-    try { await creditPlayerOg(p, oa, ob); showToast(`Outright wallet +${money(oa)} (+${money(ob)} bonus) → ${p.nickname}`); setOgAmt(""); }
-    catch (e) { showToast(e.message || "Failed", "err"); } finally { setBusy(false); }
-  };
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <div className="mb-2 text-sm font-bold">👤 {p.nickname} <span className="text-[11px] font-normal text-stone-500">{p.full_name}</span></div>
+      <div className="mb-3 text-sm font-bold">👤 {p.nickname} <span className="text-[11px] font-normal text-stone-500">{p.full_name}</span></div>
 
-      <div className="mb-2 flex items-center justify-between text-[11px]">
-        <span className="font-semibold text-emerald-300">Match wallet</span>
-        <span className="text-stone-400">Net <b className={w.net >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(w.net)}</b></span>
-      </div>
-      <div className="mb-2 grid grid-cols-5 gap-1.5 text-center text-[10px]">
-        {[["Dep", w.deposit], ["Bonus", w.bonus], ["In", w.inBets], ["Won", w.won], ["Lost", w.lost]].map(([k, v]) => (
-          <div key={k} className="rounded-lg bg-black/20 px-1 py-1.5"><div className="text-stone-500">{k}</div><div className="font-semibold text-white">{fmtN(v)}</div></div>
-        ))}
-      </div>
-      <div className="flex items-end gap-2">
-        <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="Add match Coins" className={ipt} />
-        <button onClick={addMatch} disabled={busy} className="rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">{busy ? "…" : "Add"}</button>
-      </div>
-      {a > 0 && <p className="mt-1 text-[11px] text-emerald-300/80">{bonusPct(a) ? `${bonusPct(a)}% bonus → +${money(b2)}` : "No bonus (under 10,000)"}</p>}
+      <CreditBlock title="Match wallet" color="text-emerald-300" wallet={w} showToast={showToast}
+        onCredit={(a, b, note) => creditPlayer(p, a, b, note).then(() => showToast(`Match +${money(a + b)} (${note}) → ${p.nickname}`))}
+        onExtract={(a, note) => creditPlayer(p, -a, 0, note).then(() => showToast(`Match −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
 
-      <div className="mt-3 mb-2 flex items-center justify-between border-t border-white/5 pt-3 text-[11px]">
-        <span className="font-semibold text-amber-300">🏆 Outright wallet</span>
-        <span className="text-stone-400">Net <b className={og.net >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(og.net)}</b></span>
-      </div>
-      <div className="mb-2 grid grid-cols-5 gap-1.5 text-center text-[10px]">
-        {[["Dep", og.deposit], ["Bonus", og.bonus], ["In", og.inBets], ["Won", og.won], ["Lost", og.lost]].map(([k, v]) => (
-          <div key={k} className="rounded-lg bg-black/20 px-1 py-1.5"><div className="text-stone-500">{k}</div><div className="font-semibold text-white">{fmtN(v)}</div></div>
-        ))}
-      </div>
-      <div className="flex items-end gap-2">
-        <input type="number" value={ogAmt} onChange={(e) => setOgAmt(e.target.value)} placeholder="Add outright Coins" className={ipt} />
-        <button onClick={addOg} disabled={busy} className="rounded-lg bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">{busy ? "…" : "Add"}</button>
-      </div>
-      {oa > 0 && <p className="mt-1 text-[11px] text-amber-300/80">{bonusPct(oa) ? `${bonusPct(oa)}% bonus → +${money(ob)}` : "No bonus (under 10,000)"}</p>}
+      <div className="my-3 border-t border-white/5" />
+
+      <CreditBlock title="🏆 Outright wallet" color="text-amber-300" wallet={og} showToast={showToast}
+        onCredit={(a, b, note) => creditPlayerOg(p, a, b, note).then(() => showToast(`Outright +${money(a + b)} (${note}) → ${p.nickname}`))}
+        onExtract={(a, note) => creditPlayerOg(p, -a, 0, note).then(() => showToast(`Outright −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
 
       <button onClick={() => setShowHist(!showHist)} className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-stone-400 hover:text-emerald-300">
-        <ChevronRight className={`h-3.5 w-3.5 transition ${showHist ? "rotate-90" : ""}`} /> Top-up history ({(myTxns || []).length})
+        <ChevronRight className={`h-3.5 w-3.5 transition ${showHist ? "rotate-90" : ""}`} /> Transaction history ({(myTxns || []).length})
       </button>
       {showHist && (
         <div className="mt-2 space-y-1">
-          {(myTxns || []).length === 0 && <p className="text-[11px] text-stone-600">No top-ups yet.</p>}
-          {(myTxns || []).map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-1.5 text-[11px]">
-              <span className="text-stone-400">{new Date(t.created_at).toLocaleString()} <span className={t.kind === "outright" ? "text-amber-300" : "text-emerald-300"}>· {t.kind === "outright" ? "outright" : "match"}</span></span>
-              <span className="font-semibold text-emerald-300">+{fmtN(Number(t.deposit) + Number(t.bonus))} <span className="text-stone-500">({fmtN(t.deposit)}+{fmtN(t.bonus)})</span></span>
-            </div>
-          ))}
+          {(myTxns || []).length === 0 && <p className="text-[11px] text-stone-600">No transactions yet.</p>}
+          {(myTxns || []).map((t) => {
+            const total = Number(t.deposit) + Number(t.bonus);
+            return (
+              <div key={t.id} className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-1.5 text-[11px]">
+                <span className="text-stone-400">{new Date(t.created_at).toLocaleString()} <span className={t.kind === "outright" ? "text-amber-300" : "text-emerald-300"}>· {t.kind === "outright" ? "outright" : "match"}</span>{t.note ? <span className="text-stone-500"> · {t.note}</span> : ""}</span>
+                <span className={`font-semibold ${total >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{total >= 0 ? "+" : "−"}{fmtN(Math.abs(total))}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
