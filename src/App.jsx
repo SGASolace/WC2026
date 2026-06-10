@@ -15,6 +15,9 @@ const FIXTURES = [{"n":1,"day":"Fri","date":"Jun 12, 2026","time":"01:00","home"
 
 const RULES = { min: 200, max: 1000, minCategories: 2, currency: "Coins" };
 
+// Predicted XI (10 outfield starters) per team — used for scorer player dropdowns
+const SQUADS = {"Mexico":["Jesus Gallardo","Cesar Montes","Johan Vasquez","Jorge Sanchez","Edson Alvarez","Luis Romo","Orbelin Pineda","Alexis Vega","Santiago Gimenez","Cesar Huerta"],"South Africa":["Aubrey Modiba","Mbekezeli Mbokazi","Nkosinathi Sibisi","Khuliso Mudau","Teboho Mokoena","Thalente Mbatha","Sphephelo Sithole","Oswin Appollis","Lyle Foster","Themba Zwane"],"Korea Republic":["Seol Young-woo","Kim Min-jae","Kim Tae-hyeon","Kim Moon-hwan","Hwang In-beom","Paik Seung-ho","Hwang Hee-chan","Lee Kang-in","Son Heung-min","Cho Gue-sung"],"Czech Republic":["Vladimir Coufal","Ladislav Krejci","Robin Hranac","David Jurasek","Tomas Soucek","Lukas Cerv","Lukas Provod","Pavel Sulc","Adam Hlozek","Patrik Schick"],"Canada":["Alistair Johnston","Derek Cornelius","Moise Bombito","Alphonso Davies","Stephen Eustaquio","Ismael Kone","Mathieu Choiniere","Tajon Buchanan","Jonathan David","Jacob Shaffelburg"],"Bosnia and Herzegovina":["Amar Dedic","Sead Kolasinac","Nikola Katic","Dennis Hadzikadunic","Amir Hadziahmetovic","Benjamin Tahirovic","Armin Gigovic","Esmir Bajraktarevic","Ermedin Demirovic","Edin Dzeko"],"Qatar":["Pedro Miguel","Boualem Khoukhi","Homam Ahmed","Lucas Mendes","Assim Madibo","Karim Boudiaf","Akram Afif","Hassan Al-Haydos","Yusuf Abdurisag","Almoez Ali"],"Switzerland":["Silvan Widmer","Manuel Akanji","Nico Elvedi","Ricardo Rodriguez","Granit Xhaka","Remo Freuler","Dan Ndoye","Johan Manzambi","Ruben Vargas","Breel Embolo"],"Brazil":["Wesley","Marquinhos","Gabriel Magalhaes","Douglas Santos","Casemiro","Bruno Guimaraes","Lucas Paqueta","Raphinha","Matheus Cunha","Vinicius Junior"],"Morocco":["Achraf Hakimi","Nayef Aguerd","Chadi Riad","Noussair Mazraoui","Sofyan Amrabat","Azzedine Ounahi","Bilal El Khannouss","Brahim Diaz","Ayoub El Kaabi","Abde Ezzalzouli"],"Haiti":["Carlens Arcus","Ricardo Ade","Hannes Delcroix","Jean-Kevin Duverne","Carl Sainte","Danley Jean Jacques","Jean-Ricner Bellegarde","Derrick Etienne Jr.","Frantzdy Pierrot","Duckens Nazon"],"Scotland":["Jack Hendry","John Souttar","Scott McKenna","Aaron Hickey","John McGinn","Scott McTominay","Lewis Ferguson","Andy Robertson","Che Adams","Lyndon Dykes"],"United States":["Sergino Dest","Chris Richards","Tim Ream","Antonee Robinson","Tyler Adams","Weston McKennie","Malik Tillman","Timothy Weah","Folarin Balogun","Christian Pulisic"],"Paraguay":["Gustavo Velazquez","Gustavo Gomez","Fabian Balbuena","Omar Alderete","Andres Cubas","Miguel Almiron","Diego Gomez","Ramon Sosa","Antonio Sanabria","Julio Enciso"],"Australia":["Jason Geria","Harry Souttar","Alessandro Circati","Aziz Behich","Jackson Irvine","Connor Metcalfe","Ajdin Hrustic","Mathew Leckie","Awer Mabil","Mohamed Toure"],"Turkey":["Zeki Celik","Merih Demiral","Abdulkerim Bardakci","Ferdi Kadioglu","Hakan Calhanoglu","Orkun Kokcu","Kerem Akturkoglu","Arda Guler","Kenan Yildiz","Baris Alper Yilmaz"],"Germany":["Joshua Kimmich","Jonathan Tah","Nico Schlotterbeck","David Raum","Aleksandar Pavlovic","Leon Goretzka","Jamal Musiala","Florian Wirtz","Leroy Sane","Kai Havertz"],"Curaçao":["Shurandy Sambo","Riechedly Bazoer","Armando Obispo","Joshua Brenet","Leandro Bacuna","Livano Comenencia","Godfried Roemeratoe","Juninho Bacuna","Jurgen Locadia","Tahith Chong"],"Ivory Coast":["Wilfried Singo","Odilon Kossounou","Evan Ndicka","Ghislain Konan","Franck Kessie","Ibrahim Sangare","Jean Michael Seri","Simon Adingra","Ange-Yoan Bonny","Amad Diallo"],"Ecuador":["Angelo Preciado","Piero Hincapie","Willian Pacho","Pervis Estupinan","Moises Caicedo","Alan Franco","Kendry Paez","Gonzalo Plata","Enner Valencia","Kevin Rodriguez"],"Netherlands":["Denzel Dumfries","Virgil van Dijk","Micky van de Ven","Nathan Ake","Frenkie de Jong","Tijjani Reijnders","Ryan Gravenberch","Donyell Malen","Memphis Depay","Cody Gakpo"],"Japan":["Ko Itakura","Takehiro Tomiyasu","Hiroki Ito","Yukinari Sugawara","Wataru Endo","Ao Tanaka","Yuto Nagatomo","Takefusa Kubo","Ritsu Doan","Ayase Ueda"],"Sweden":["Gabriel Gudmundsson","Victor Lindelof","Isak Hien","Daniel Svensson","Lucas Bergvall","Jesper Karlstrom","Yasin Ayari","Anthony Elanga","Viktor Gyokeres","Alexander Isak"],"Tunisia":["Yan Valery","Montassar Talbi","Dylan Bronn","Ali Abdi","Ellyes Skhiri","Hannibal Mejbri","Anis Ben Slimane","Elias Achouri","Elias Saad","Sebastian Tounekti"],"Belgium":["Timothy Castagne","Koni De Winter","Arthur Theate","Maxim De Cuyper","Amadou Onana","Youri Tielemans","Alexis Saelemaekers","Kevin De Bruyne","Jeremy Doku","Romelu Lukaku"],"Egypt":["Mohamed Hany","Yasser Ibrahim","Mohamed Abdelmonem","Karim Hafez","Emam Ashour","Marwan Attia","Trezeguet","Zizo","Mohamed Salah","Omar Marmoush"],"Iran":["Ramin Rezaeian","Shojae Khalilzadeh","Hossein Kanaanizadegan","Milad Mohammadi","Saeid Ezatolahi","Saman Ghoddos","Alireza Jahanbakhsh","Mohammad Mohebi","Mehdi Taremi","Mehdi Ghayedi"],"New Zealand":["Tim Payne","Tyler Bindon","Michael Boxall","Liberato Cacace","Joe Bell","Alex Rufer","Marko Stamenic","Sarpreet Singh","Ben Old","Chris Wood"],"Spain":["Pedro Porro","Aymeric Laporte","Pau Cubarsi","Marc Cucurella","Pedri","Rodri","Mikel Merino","Lamine Yamal","Mikel Oyarzabal","Nico Williams"],"Cape Verde":["Wagner Pina","Roberto Lopes","Logan Costa","Stopira","Kevin Pina","Joao Paulo","Jamiro Monteiro","Jovane Cabral","Dailon Livramento","Garry Rodrigues"],"Saudi Arabia":["Saud Abdulhamid","Abdulelah Al-Amri","Hassan Al-Tambakti","Nawaf Boushal","Mohamed Kanno","Nasser Al-Dawsari","Khalid Al-Ghannam","Musab Al-Juwayr","Salem Al-Dawsari","Firas Al-Buraikan"],"Uruguay":["Guillermo Varela","Jose Maria Gimenez","Ronald Araujo","Mathias Olivera","Manuel Ugarte","Federico Valverde","Rodrigo Bentancur","Facundo Pellistri","Darwin Nunez","Giorgian de Arrascaeta"],"France":["Jules Kounde","William Saliba","Dayot Upamecano","Theo Hernandez","Aurelien Tchouameni","Adrien Rabiot","Manu Kone","Ousmane Dembele","Kylian Mbappe","Michael Olise"],"Senegal":["Krepin Diatta","Kalidou Koulibaly","Abdoulaye Seck","El Hadji Malick Diouf","Idrissa Gueye","Pape Matar Sarr","Lamine Camara","Ismaila Sarr","Nicolas Jackson","Sadio Mane"],"Iraq":["Merchas Doski","Zaid Tahseen","Manaf Younis","Hussein Ali","Zidane Iqbal","Amir Al-Ammari","Youssef Amyn","Aimar Sher","Kevin Yakob","Mohanad Ali"],"Norway":["Julian Ryerson","Kristoffer Ajer","Leo Ostigard","David Moller Wolfe","Sander Berge","Martin Odegaard","Fredrik Aursnes","Antonio Nusa","Erling Haaland","Alexander Sorloth"],"Argentina":["Nahuel Molina","Cristian Romero","Nicolas Otamendi","Nicolas Tagliafico","Rodrigo De Paul","Leandro Paredes","Alexis Mac Allister","Lionel Messi","Lautaro Martinez","Julian Alvarez"],"Algeria":["Rafik Belghali","Aissa Mandi","Mohamed Amine Tougai","Rayan Ait-Nouri","Ramiz Zerrouki","Nabil Bentaleb","Houssem Aouar","Riyad Mahrez","Amine Gouiri","Mohamed Amoura"],"Austria":["Stefan Posch","Kevin Danso","David Alaba","Philipp Mwene","Xaver Schlager","Nicolas Seiwald","Konrad Laimer","Marcel Sabitzer","Patrick Wimmer","Marko Arnautovic"],"Jordan":["Mohammad Abu Hashish","Yazan Al-Arab","Saed Al-Rosan","Salim Obaid","Amer Jamous","Rajaei Ayed","Noor Al-Rawabdeh","Musa Al-Taamari","Odeh Al-Fakhouri","Ali Olwan"],"Portugal":["Diogo Dalot","Ruben Dias","Goncalo Inacio","Nuno Mendes","Vitinha","Joao Neves","Bruno Fernandes","Bernardo Silva","Cristiano Ronaldo","Rafael Leao"],"DR Congo":["Aaron Wan-Bissaka","Chancel Mbemba","Axel Tuanzebe","Arthur Masuaku","Ngal'ayel Mukau","Noah Sadiki","Theo Bongonda","Gael Kakuta","Fiston Mayele","Yoane Wissa"],"Uzbekistan":["Khojiakbar Alijonov","Abdukodir Khusanov","Rustam Ashurmatov","Farrukh Sayfiev","Odiljon Hamrobekov","Jamshid Iskanderov","Jaloliddin Masharipov","Abbosbek Fayzullaev","Oston Urunov","Eldor Shomurodov"],"Colombia":["Daniel Munoz","Jhon Lucumi","Davinson Sanchez","Johan Mojica","Jefferson Lerma","Richard Rios","Jhon Arias","James Rodriguez","Luis Diaz","Jhon Cordoba"],"England":["Reece James","John Stones","Marc Guehi","Nico O'Reilly","Declan Rice","Elliot Anderson","Bukayo Saka","Jude Bellingham","Eberechi Eze","Harry Kane"],"Croatia":["Josip Stanisic","Josip Sutalo","Josko Gvardiol","Ivan Perisic","Luka Modric","Mateo Kovacic","Luka Sucic","Nikola Vlasic","Ante Budimir","Andrej Kramaric"],"Ghana":["Alidu Seidu","Abdul Mumin","Jonas Adjetey","Gideon Mensah","Thomas Partey","Caleb Yirenkyi","Abdul Fatawu","Antoine Semenyo","Kamaldeen Sulemana","Inaki Williams"],"Panama":["Cesar Blackman","Jose Cordoba","Fidel Escobar","Eric Davis","Adalberto Carrasquilla","Anibal Godoy","Jose Luis Rodriguez","Ismael Diaz","Yoel Barcenas","Jose Fajardo"]};
+
 /* ---------- helpers ---------- */
 const toDecimal = (frac) => {
   if (typeof frac === "number") return frac + 1;
@@ -54,11 +57,11 @@ function walletOf(profile, myBets) {
 const uid = () => Math.random().toString(36).slice(2, 9);
 const betCode = () => "WC2026-" + Math.floor(100000 + Math.random() * 899999);
 
-/* ---------- match timing & lock (picks close 15 min before kickoff) ---------- */
-const LOCK_MIN = 15;
+/* ---------- match timing & lock (picks close 1 min before kickoff) ---------- */
+const LOCK_MIN = 1;
 const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 function kickoffMs(m) {
-  // m.date "Jun 12, 2026", m.time "01:00" — fixtures are in GMT+6 (Dhaka)
+  // m.date "Jun 12, 2026", m.time "01:00" — fixtures are authored in GMT+6 (Dhaka)
   const [mon, day, year] = m.date.replace(",", "").split(/\s+/);
   const mm = String((MONTHS[mon] ?? 0) + 1).padStart(2, "0");
   const dd = String(parseInt(day, 10)).padStart(2, "0");
@@ -66,12 +69,28 @@ function kickoffMs(m) {
 }
 const lockMs = (m) => kickoffMs(m) - LOCK_MIN * 60 * 1000;
 const isLocked = (m, now = Date.now()) => now >= lockMs(m);
+// countdown shown as days / hours / minutes
 function lockCountdown(m, now = Date.now()) {
   const diff = lockMs(m) - now;
   if (diff <= 0) return null;
-  const h = Math.floor(diff / 3.6e6), mn = Math.floor((diff % 3.6e6) / 6e4);
-  return h > 0 ? `${h}h ${mn}m` : `${mn}m`;
+  const d = Math.floor(diff / 8.64e7);
+  const h = Math.floor((diff % 8.64e7) / 3.6e6);
+  const mn = Math.floor((diff % 3.6e6) / 6e4);
+  if (d > 0) return `${d}d ${h}h ${mn}m`;
+  if (h > 0) return `${h}h ${mn}m`;
+  return `${mn}m`;
 }
+// the viewer's local timezone (dynamic)
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const TZ_ABBR = (() => {
+  try { return new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value || ""; }
+  catch { return ""; }
+})();
+// kickoff shown in the viewer's local time, "Fri, Jun 12, 7:00 AM"
+function kickoffLocal(m, opts = {}) {
+  return new Date(kickoffMs(m)).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", ...opts });
+}
+const kickoffTimeLocal = (m) => new Date(kickoffMs(m)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
 /* ---------- data access (Supabase; shared across all users) ---------- */
 const db = {
@@ -141,7 +160,14 @@ const db = {
 };
 
 /* ---------- Market template (the FIFA WC prediction sheet, generalized) ---------- */
+// default first/anytime odds ladder by squad position (defenders longer, forwards shorter)
+const FIRST_ODDS = ["12/1", "11/1", "10/1", "9/1", "8/1", "7/1", "6/1", "5/1", "9/2", "4/1"];
+const ANY_ODDS = ["6/1", "11/2", "5/1", "9/2", "4/1", "7/2", "3/1", "5/2", "9/4", "2/1"];
 function defaultPlayers(team, side) {
+  const squad = SQUADS[team];
+  if (squad && squad.length) {
+    return squad.map((name, i) => ({ name, first: FIRST_ODDS[i] || "12/1", any: ANY_ODDS[i] || "6/1" }));
+  }
   const base = side === "home"
     ? [["Striker", "3/1", "1/1"], ["Forward", "7/2", "6/4"], ["Midfielder", "5/1", "2/1"], ["Winger", "6/1", "3/1"]]
     : [["Striker", "4/1", "2/1"], ["Forward", "9/2", "5/2"], ["Midfielder", "6/1", "3/1"], ["Winger", "8/1", "4/1"]];
@@ -263,13 +289,19 @@ function evaluateItem(item, R) {
     case "first_scorer": {
       const first = (R.scorers?.[0] || "").trim().toLowerCase();
       const known = R.knownScorers || [];
-      if (meta.scorer === "__OTHER__") return !!first && !known.includes(first);
+      if (meta.scorer === "__OTHER__") {
+        const cn = (item.customName || "").trim().toLowerCase();
+        return cn ? first === cn : (!!first && !known.includes(first));
+      }
       return first === stripPlayer(meta.scorer);
     }
     case "anytime_scorer": {
       const all = (R.scorers || []).map((s) => s.trim().toLowerCase());
       const known = R.knownScorers || [];
-      if (meta.scorer === "__OTHER__") return all.some((s) => s && !known.includes(s));
+      if (meta.scorer === "__OTHER__") {
+        const cn = (item.customName || "").trim().toLowerCase();
+        return cn ? all.includes(cn) : all.some((s) => s && !known.includes(s));
+      }
       return all.includes(stripPlayer(meta.scorer));
     }
     case "ht_score": {
@@ -777,7 +809,7 @@ function MatchList({ onOpen, results, now, nickname }) {
           <div className="font-display text-2xl leading-none text-white">{nickname}</div>
         </div>
       </div>
-      <SectionTitle icon={<Calendar className="h-5 w-5" />} title="Group Stage Fixtures" sub="72 matches · times in GMT+6 (Dhaka)" />
+      <SectionTitle icon={<Calendar className="h-5 w-5" />} title="Group Stage Fixtures" sub={`72 matches · times shown in your timezone (${TZ_ABBR})`} />
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a team…"
@@ -799,7 +831,7 @@ function MatchList({ onOpen, results, now, nickname }) {
                     className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-emerald-400/40 hover:bg-white/[0.06]">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex items-center gap-2 text-[11px] text-stone-500">
-                        <Clock className="h-3 w-3" /> {m.day} · {m.time}
+                        <Clock className="h-3 w-3" /> {kickoffLocal(m)} {TZ_ABBR}
                         {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-300">SETTLED {settled.ft.h}–{settled.ft.a}</span>}
                         {locked && <span className="rounded bg-rose-500/20 px-1.5 py-0.5 font-semibold text-rose-300">🔒 LOCKED</span>}
                         {closing && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">closes in {closing}</span>}
@@ -856,8 +888,8 @@ function MatchDetail({ match, config, onBack, slip, setSlip, results, showToast,
           <Team flag={match.hf} name={match.home} />
           <div className="text-center">
             <div className="font-display text-3xl text-amber-300">VS</div>
-            <div className="mt-1 text-[11px] text-stone-400">{match.day} {match.date}</div>
-            <div className="text-[11px] text-stone-400">Kickoff {match.time} (GMT+6) · picks close {LOCK_MIN} min before</div>
+            <div className="mt-1 text-[11px] text-stone-400">{kickoffLocal(match, { year: undefined })}</div>
+            <div className="text-[11px] text-stone-400">Kickoff {kickoffTimeLocal(match)} {TZ_ABBR} · picks close {LOCK_MIN} min before</div>
           </div>
           <Team flag={match.af} name={match.away} />
         </div>
@@ -917,8 +949,8 @@ function MarketCard({ mk, inSlip, toggle, disabled }) {
               return (
                 <button key={s.id} disabled={disabled} onClick={() => toggle(mk, s)}
                   className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-xs transition disabled:opacity-40 ${on ? "border-amber-400 bg-amber-400/15" : "border-white/10 bg-black/20 hover:border-emerald-400/40"}`}>
-                  <span className="min-w-0 flex-1 truncate font-medium">{s.label}</span>
-                  <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-bold tabular-nums ${on ? "bg-amber-400 text-black" : "bg-white/10 text-emerald-300"}`}>{s.oddsStr}</span>
+                  <span className="min-w-0 flex-1 break-words font-medium leading-tight">{s.label}</span>
+                  <span className={`shrink-0 self-start rounded-md px-1.5 py-0.5 font-bold tabular-nums ${on ? "bg-amber-400 text-black" : "bg-white/10 text-emerald-300"}`}>{s.oddsStr}</span>
                 </button>
               );
             })}
@@ -938,6 +970,8 @@ function BetSlip({ slip, setSlip, user, placeBet, available, showToast, setTab, 
 
   const setStake = (selId, matchId, v) =>
     setSlip((p) => p.map((x) => (x.selId === selId && x.matchId === matchId ? { ...x, stake: Math.max(0, +v || 0) } : x)));
+  const setCustomName = (selId, matchId, v) =>
+    setSlip((p) => p.map((x) => (x.selId === selId && x.matchId === matchId ? { ...x, customName: v } : x)));
   const remove = (selId, matchId) => setSlip((p) => p.filter((x) => !(x.selId === selId && x.matchId === matchId)));
 
   const totalStake = slip.reduce((a, s) => a + s.stake, 0);
@@ -1019,6 +1053,11 @@ function BetSlip({ slip, setSlip, user, placeBet, available, showToast, setTab, 
                     </div>
                     <button onClick={() => remove(s.selId, s.matchId)} className="rounded p-1 text-stone-500 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
                   </div>
+                  {s.meta?.scorer === "__OTHER__" && (
+                    <input value={s.customName || ""} onChange={(e) => setCustomName(s.selId, s.matchId, e.target.value)}
+                      placeholder="Type the player's name"
+                      className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
+                  )}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="rounded-md bg-white/10 px-2 py-1 text-xs font-bold text-emerald-300">@ {s.oddsStr}</span>
                     <div className="flex items-center gap-1.5">
@@ -1181,44 +1220,48 @@ function BetCard({ b }) {
   );
 }
 
-/* ---------- Leaderboard ---------- */
+/* ---------- Leaderboard (privacy: others' overall earnings hidden) ---------- */
 function Leaderboard({ bets, me }) {
-  const board = useMemo(() => {
+  const { mine, active } = useMemo(() => {
     const map = {};
     bets.forEach((b) => {
-      const u = (map[b.user] ||= { nick: b.user, staked: 0, returns: 0, wins: 0, points: 0, openCount: 0, openStake: 0, openPotential: 0 });
-      u.staked += b.totalStake;
-      if (b.status === "won") { u.returns += b.payout || 0; u.wins++; u.points += Math.round((b.payout || 0) - b.totalStake); }
-      if (b.status === "lost") u.points -= b.totalStake;
-      if (b.status === "open") { u.openCount++; u.openStake += b.totalStake; u.openPotential += b.potential || 0; }
+      const u = (map[b.user] ||= { nick: b.user, points: 0, openCount: 0, openStake: 0, openPotential: 0 });
+      if (b.status === "won") u.points += Math.round((b.payout || 0) - b.totalStake);
+      else if (b.status === "lost") u.points -= b.totalStake;
+      else if (b.status === "open") { u.openCount++; u.openStake += b.totalStake; u.openPotential += b.potential || 0; }
     });
-    return Object.values(map).sort((a, b) => b.points - a.points);
-  }, [bets]);
+    const all = Object.values(map);
+    // active ranking by potential winnings from open picks
+    const active = all.filter((u) => u.openCount > 0).sort((a, b) => (b.openPotential - b.openStake) - (a.openPotential - a.openStake));
+    return { mine: map[me], active };
+  }, [bets, me]);
 
   return (
     <div>
-      <SectionTitle icon={<Crown className="h-5 w-5" />} title="Leaderboard" sub="Settled net profit · active picks shown below each player" />
-      {board.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No picks yet. Rankings appear once players make picks and the admin settles matches.</p>}
+      <SectionTitle icon={<Crown className="h-5 w-5" />} title="Ranking" sub="Your overall earnings are private · everyone's active picks are shown" />
+
+      <div className="mb-5 rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-400/15 to-emerald-500/10 p-4">
+        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Your overall earnings (settled)</div>
+        <div className={`font-display text-4xl ${(mine?.points || 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+          {(mine?.points || 0) >= 0 ? "+" : ""}{mine?.points || 0} <span className="text-base text-stone-400">Coins</span>
+        </div>
+        <div className="mt-1 text-[11px] text-stone-400">Only you can see your overall total. Other players see only your active picks.</div>
+      </div>
+
+      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-stone-200"><Clock className="h-4 w-4 text-sky-300" /> Active Picks — all players</div>
+      {active.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No active picks right now. They appear here while matches are in play.</p>}
       <div className="space-y-2">
-        {board.map((u, i) => (
-          <div key={u.nick} className={`rounded-2xl border p-3.5 ${u.nick === me ? "border-amber-400/50 bg-amber-400/10" : "border-white/10 bg-white/[0.03]"}`}>
-            <div className="flex items-center gap-3">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-xl font-display text-xl ${i === 0 ? "bg-amber-400 text-black" : i === 1 ? "bg-stone-300 text-black" : i === 2 ? "bg-amber-700 text-white" : "bg-white/10 text-stone-300"}`}>{i + 1}</div>
-              <div className="flex-1">
-                <div className="text-sm font-bold">{u.nick} {u.nick === me && <span className="text-[10px] text-amber-300">(you)</span>}</div>
-                <div className="text-[11px] text-stone-500">{u.wins} wins · {money(u.staked)} staked</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[9px] uppercase tracking-wide text-stone-500">Settled</div>
-                <div className={`font-display text-2xl leading-none ${u.points >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{u.points >= 0 ? "+" : ""}{u.points}</div>
-              </div>
+        {active.map((u, i) => (
+          <div key={u.nick} className={`flex items-center gap-3 rounded-2xl border p-3.5 ${u.nick === me ? "border-amber-400/50 bg-amber-400/10" : "border-white/10 bg-white/[0.03]"}`}>
+            <div className={`flex h-9 w-9 items-center justify-center rounded-xl font-display text-xl ${i === 0 ? "bg-amber-400 text-black" : i === 1 ? "bg-stone-300 text-black" : i === 2 ? "bg-amber-700 text-white" : "bg-white/10 text-stone-300"}`}>{i + 1}</div>
+            <div className="flex-1">
+              <div className="text-sm font-bold">{u.nick} {u.nick === me && <span className="text-[10px] text-amber-300">(you)</span>}</div>
+              <div className="text-[11px] text-stone-500">⏳ {u.openCount} active {u.openCount === 1 ? "pick" : "picks"} · {money(u.openStake)} in play</div>
             </div>
-            {u.openCount > 0 && (
-              <div className="mt-2 flex items-center justify-between rounded-lg bg-sky-500/10 px-3 py-1.5 text-[11px]">
-                <span className="text-sky-300">⏳ {u.openCount} active {u.openCount === 1 ? "pick" : "picks"} · {money(u.openStake)} in play</span>
-                <span className="font-semibold text-sky-200">potential +{fmtN(u.openPotential - u.openStake)}</span>
-              </div>
-            )}
+            <div className="text-right">
+              <div className="text-[9px] uppercase tracking-wide text-stone-500">Potential</div>
+              <div className="font-display text-xl leading-none text-sky-300">+{fmtN(u.openPotential - u.openStake)}</div>
+            </div>
           </div>
         ))}
       </div>
@@ -1524,28 +1567,41 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
       <h3 className="mb-1 font-display text-2xl">{match.hf} {match.home} v {match.away} {match.af}</h3>
       <p className="mb-4 text-xs text-stone-500">Add the real squad names and set odds. Scorer odds (first / anytime) are set per player below.</p>
 
-      {[["home", match.home, home], ["away", match.away, away]].map(([side, team, list]) => (
+      {[["home", match.home, home], ["away", match.away, away]].map(([side, team, list]) => {
+        const squad = SQUADS[team] || [];
+        return (
         <div key={side} className="mb-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-bold">{team} — Players</span>
             <button onClick={() => addPlayer(side)} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-300"><Plus className="h-3 w-3" /> Add</button>
           </div>
-          <div className="mb-1 grid grid-cols-[1fr_64px_64px_28px] gap-2 px-1 text-[10px] uppercase tracking-wide text-stone-500">
-            <span>Player name</span><span>1st</span><span>Anytime</span><span></span>
+          <div className="mb-1 grid grid-cols-[1fr_60px_60px_26px] gap-2 px-1 text-[10px] uppercase tracking-wide text-stone-500">
+            <span>Player (pick or type)</span><span>1st</span><span>Any</span><span></span>
           </div>
           <div className="space-y-1.5">
-            {list.map((p, i) => (
-              <div key={i} className="grid grid-cols-[1fr_64px_64px_28px] items-center gap-2">
-                <input value={p.name} onChange={(e) => setPlayer(side, i, "name", e.target.value)} placeholder="e.g. Vinicius Jr" className={ipt} />
+            {list.map((p, i) => {
+              const custom = !squad.includes(p.name);
+              return (
+              <div key={i} className="grid grid-cols-[1fr_60px_60px_26px] items-start gap-2">
+                <div>
+                  <select value={custom ? "__CUSTOM__" : p.name}
+                    onChange={(e) => setPlayer(side, i, "name", e.target.value === "__CUSTOM__" ? "" : e.target.value)}
+                    className={ipt}>
+                    <option value="">— select —</option>
+                    {squad.map((n) => <option key={n} value={n}>{n}</option>)}
+                    <option value="__CUSTOM__">✏️ Custom name…</option>
+                  </select>
+                  {custom && <input value={p.name} onChange={(e) => setPlayer(side, i, "name", e.target.value)} placeholder="Type player name" className={ipt + " mt-1"} />}
+                </div>
                 <input value={p.first} onChange={(e) => setPlayer(side, i, "first", e.target.value)} placeholder="5/1" className={ipt + " text-center"} />
                 <input value={p.any} onChange={(e) => setPlayer(side, i, "any", e.target.value)} placeholder="2/1" className={ipt + " text-center"} />
-                <button onClick={() => delPlayer(side, i)} className="flex h-8 items-center justify-center rounded-lg bg-rose-500/15 text-rose-300"><X className="h-3.5 w-3.5" /></button>
+                <button onClick={() => delPlayer(side, i)} className="flex h-9 items-center justify-center rounded-lg bg-rose-500/15 text-rose-300"><X className="h-3.5 w-3.5" /></button>
               </div>
-            ))}
+            );})}
             {list.length === 0 && <p className="py-2 text-center text-xs text-stone-600">No players yet — tap Add.</p>}
           </div>
         </div>
-      ))}
+      );})}
 
       <div className="mt-5 mb-2 text-sm font-bold">Odds — other markets</div>
       <div className="space-y-2">
