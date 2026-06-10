@@ -394,7 +394,7 @@ function evaluateItem(item, R) {
 const stripPlayer = (p) => p.trim().toLowerCase();
 
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
-const matchName = (id) => { const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
+const matchName = (id) => { if (+id === -1) return "Tournament Outrights"; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
 const fmtN = (n) => Math.round(n).toLocaleString();
 const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
 // realized profit/loss for one selection: won slip → stake×(odds−1); lost slip → −stake; open → 0 (pending)
@@ -1529,17 +1529,17 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
       </div>
 
       <div className="mb-2 flex gap-2">
-        <button onClick={() => exportPicksCSV(bets, "SGA_WC2026_all_picks.csv", true)}
+        <button onClick={() => exportPicksCSV(bets.filter((b) => b.kind !== "outright"), "SGA_WC2026_match_picks.csv", true)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-          <BarChart3 className="h-3.5 w-3.5" /> Picks (Excel)
+          <BarChart3 className="h-3.5 w-3.5" /> Match Picks (Excel)
         </button>
-        <button onClick={() => printPicks(bets, "All Players — Picks", true)}
+        <button onClick={() => printPicks(bets.filter((b) => b.kind !== "outright"), "All Players — Match Picks", true)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-          <Receipt className="h-3.5 w-3.5" /> Picks (PDF)
+          <Receipt className="h-3.5 w-3.5" /> Match Picks (PDF)
         </button>
       </div>
       <div className="mb-4">
-        <button onClick={() => exportTransactionsCSV(txns, "SGA_WC2026_transactions.csv")}
+        <button onClick={() => exportTransactionsCSV(txns, "SGA_WC2026_all_transactions.csv")}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-white/10">
           <Wallet className="h-3.5 w-3.5" /> Export All Transactions (Excel)
         </button>
@@ -1573,7 +1573,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
           )}
         </>
       ) : mode === "outrights" ? (
-        <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} saveConfig={saveConfig} settleOutright={settleOutright} showToast={showToast} />
+        <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} txns={txns} saveConfig={saveConfig} settleOutright={settleOutright} showToast={showToast} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
       )}
@@ -1582,8 +1582,10 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
 }
 
 /* ---------- Admin: outrights (edit odds + settle winners) ---------- */
-function OutrightAdmin({ config, result, bets, saveConfig, settleOutright, showToast }) {
+function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright, showToast }) {
   const markets = useMemo(() => buildOutrightMarkets(config), [config]);
+  const ogBets = useMemo(() => (bets || []).filter((b) => b.kind === "outright"), [bets]);
+  const ogTxns = useMemo(() => (txns || []).filter((t) => t.kind === "outright"), [txns]);
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
   const [winners, setWinners] = useState(() => ({ ...(result || {}) }));
   const [busy, setBusy] = useState(false);
@@ -1625,6 +1627,23 @@ function OutrightAdmin({ config, result, bets, saveConfig, settleOutright, showT
   return (
     <div>
       <SectionTitle icon={<Trophy className="h-5 w-5" />} title="Outrights" sub={`Adjust odds & settle winners · entries close ${outrightDeadlineLocal()}`} />
+
+      <div className="mb-2 flex gap-2">
+        <button onClick={() => exportPicksCSV(ogBets, "SGA_WC2026_outright_picks.csv", true)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <BarChart3 className="h-3.5 w-3.5" /> Outright Picks (Excel)
+        </button>
+        <button onClick={() => printPicks(ogBets, "All Players — Outright Picks", true)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <Receipt className="h-3.5 w-3.5" /> Outright Picks (PDF)
+        </button>
+      </div>
+      <div className="mb-4">
+        <button onClick={() => exportTransactionsCSV(ogTxns, "SGA_WC2026_outright_transactions.csv")}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-white/10">
+          <Wallet className="h-3.5 w-3.5" /> Outright Transactions (Excel)
+        </button>
+      </div>
 
       <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="mb-2 text-sm font-bold">Declare winners (settles & pays out)</div>
