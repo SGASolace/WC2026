@@ -377,8 +377,16 @@ function evaluateItem(item, R) {
     }
     case "own_goal":
       return meta.og === "H" ? !!R.ownGoalH : !!R.ownGoalA;
-    case "og_champion": case "og_runnerup": case "og_finalists": case "og_boot": case "og_ball":
-      return !!R[marketKey] && item.selId === R[marketKey];
+    case "og_champion": case "og_runnerup": case "og_finalists": case "og_boot": case "og_ball": {
+      const win = R[marketKey];
+      if (!win || item.selId !== win) return false;
+      if (item.meta?.other) {
+        const wn = (R[marketKey + "_name"] || "").trim().toLowerCase();
+        const cn = (item.customName || "").trim().toLowerCase();
+        return !!wn && wn === cn; // "Any other" pays only if the typed name matches the declared winner
+      }
+      return true;
+    }
     default:
       return false;
   }
@@ -1565,7 +1573,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
           )}
         </>
       ) : mode === "outrights" ? (
-        <OutrightAdmin config={configs[-1]} result={results[-1]} saveConfig={saveConfig} settleOutright={settleOutright} showToast={showToast} />
+        <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} saveConfig={saveConfig} settleOutright={settleOutright} showToast={showToast} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
       )}
@@ -1574,12 +1582,25 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, settle
 }
 
 /* ---------- Admin: outrights (edit odds + settle winners) ---------- */
-function OutrightAdmin({ config, result, saveConfig, settleOutright, showToast }) {
+function OutrightAdmin({ config, result, bets, saveConfig, settleOutright, showToast }) {
   const markets = useMemo(() => buildOutrightMarkets(config), [config]);
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
   const [winners, setWinners] = useState(() => ({ ...(result || {}) }));
   const [busy, setBusy] = useState(false);
   const setOdd = (key, id, val) => setOdds((o) => ({ ...o, [key]: { ...(o[key] || {}), [id]: val } }));
+
+  // distinct "Any other" names players actually typed, per market (with counts)
+  const typedNames = useMemo(() => {
+    const map = {};
+    (bets || []).filter((b) => b.kind === "outright").forEach((b) => b.items.forEach((it) => {
+      if (it.meta?.other && (it.customName || "").trim()) {
+        const k = it.marketKey, nm = it.customName.trim();
+        (map[k] ||= {});
+        map[k][nm] = (map[k][nm] || 0) + 1;
+      }
+    }));
+    return map;
+  }, [bets]);
 
   const saveOdds = async () => {
     setBusy(true);
@@ -1588,6 +1609,13 @@ function OutrightAdmin({ config, result, saveConfig, settleOutright, showToast }
     finally { setBusy(false); }
   };
   const settle = async () => {
+    // require a typed name when "Any other" is the declared winner
+    for (const mk of markets) {
+      const sel = winners[mk.key];
+      if (sel && sel === `${mk.key}_other` && !(winners[`${mk.key}_name`] || "").trim()) {
+        showToast(`Type the actual winner name for ${mk.title}`, "err"); return;
+      }
+    }
     setBusy(true);
     try { await settleOutright(winners); showToast("Outrights settled & paid out"); }
     catch (e) { showToast(e.message || "Settle failed", "err"); }
@@ -1601,16 +1629,42 @@ function OutrightAdmin({ config, result, saveConfig, settleOutright, showToast }
       <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="mb-2 text-sm font-bold">Declare winners (settles & pays out)</div>
         <div className="space-y-2">
-          {markets.map((mk) => (
-            <label key={mk.key} className="block">
+          {markets.map((mk) => {
+            const isOther = winners[mk.key] === `${mk.key}_other`;
+            return (
+            <div key={mk.key}>
               <span className="mb-1 block text-xs text-stone-400">{mk.icon} {mk.title}</span>
               <select value={winners[mk.key] || ""} onChange={(e) => setWinners((w) => ({ ...w, [mk.key]: e.target.value }))} className={ipt}>
                 <option value="">— not settled —</option>
                 {mk.selections.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
               </select>
-            </label>
-          ))}
+              {isOther && (
+                <>
+                  <input value={winners[`${mk.key}_name`] || ""} onChange={(e) => setWinners((w) => ({ ...w, [`${mk.key}_name`]: e.target.value }))}
+                    placeholder="Type the actual winner (team / combination / player)"
+                    className={ipt + " mt-1 border-amber-400/40 focus:border-amber-400"} />
+                  {typedNames[mk.key] && Object.keys(typedNames[mk.key]).length > 0 && (
+                    <div className="mt-1.5">
+                      <div className="mb-1 text-[10px] uppercase tracking-wide text-stone-500">Names players entered — tap to match exactly</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(typedNames[mk.key]).sort((a, b) => b[1] - a[1]).map(([nm, cnt]) => {
+                          const active = (winners[`${mk.key}_name`] || "").trim().toLowerCase() === nm.toLowerCase();
+                          return (
+                            <button key={nm} onClick={() => setWinners((w) => ({ ...w, [`${mk.key}_name`]: nm }))}
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${active ? "bg-amber-400 text-black" : "bg-white/5 text-stone-300 hover:bg-white/10"}`}>
+                              {nm} <span className="opacity-60">×{cnt}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );})}
         </div>
+        <p className="mt-2 text-[11px] text-stone-500">For “Any other”, type the real winner — players who chose “Any other” pay out only if their typed name matches.</p>
         <button onClick={settle} disabled={busy} className="mt-3 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
           {busy ? "Working…" : "Settle Outrights & Pay Out"}
         </button>
