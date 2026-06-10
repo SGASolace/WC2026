@@ -74,6 +74,41 @@ const OG_WINNER_KEYS = ["og_champion", "og_runnerup", "og_finalists", "og_boot",
 const OG_TOTAL_KEYS = ["og_goals", "og_owngoals", "og_cards", "og_pens"];
 const OUTRIGHT_MATCH = { n: -1, home: "Tournament", away: "Outrights" };
 
+/* ---------- Fantasy Manager (manager-of-the-matchday; uses the MATCH wallet) ---------- */
+const FANTASY_RULES = { min: 200, max: 1000 };
+const FM_CATS = [
+  { key: "md1", label: "Matchday 1", mid: -11 }, { key: "md2", label: "Matchday 2", mid: -12 },
+  { key: "md3", label: "Matchday 3", mid: -13 }, { key: "md4", label: "Matchday 4", mid: -14 },
+  { key: "md5", label: "Matchday 5", mid: -15 }, { key: "md6", label: "Matchday 6", mid: -16 },
+  { key: "md7", label: "Matchday 7", mid: -17 }, { key: "md8", label: "Matchday 8", mid: -18 },
+  { key: "overall", label: "Overall", mid: -19 },
+];
+const FM_MID_BY_CAT = Object.fromEntries(FM_CATS.map((c) => [c.key, c.mid]));
+// seed managers (from the group's list) — admin can add / delete / rename and set odds per matchday
+const FM_DEFAULT_MANAGERS = [
+  { id: "m1", name: "Shahed Fazal" }, { id: "m2", name: "Fahim Khan" }, { id: "m3", name: "Abdullah Al Mahmud" },
+  { id: "m4", name: "Sayemuzzaman Sonet" }, { id: "m5", name: "Shamim Ahmed" }, { id: "m6", name: "Asif Hasan" },
+  { id: "m7", name: "Ponir Ahmad Rigan" }, { id: "m8", name: "Md Golam Jakaria" }, { id: "m9", name: "Margub Ahmed" },
+  { id: "m10", name: "Ahmed Saady Yaamin" }, { id: "m11", name: "Md Miljer Rahman" }, { id: "m12", name: "Kayesh S Rahman" },
+  { id: "m13", name: "Mostafa Jamil" }, { id: "m14", name: "Safin Islam" }, { id: "m15", name: "Shaed Iqbal" },
+  { id: "m16", name: "Mohammad Alauddin" }, { id: "m17", name: "Mohammad Arifur Rahman" }, { id: "m18", name: "Cristiano Messi" },
+  { id: "m19", name: "Al Amin Kabir" }, { id: "m20", name: "Rezwan Ahamed Noor" }, { id: "m21", name: "Shayful Mamun" },
+  { id: "m22", name: "Newaz Newaz" }, { id: "m23", name: "Amir Safin" }, { id: "m24", name: "Majharul Royhan" },
+  { id: "m25", name: "Saurov Hassan" }, { id: "m26", name: "Javed Talukdar" }, { id: "m27", name: "Md. Moniruzzaman" },
+  { id: "m28", name: "Hasan Al Banna" }, { id: "m29", name: "S M Sayed Rubel" }, { id: "m30", name: "M M Erfanul Karim" },
+];
+function buildFantasyMarkets(cfg = {}) {
+  const managers = cfg?.managers?.length ? cfg.managers : FM_DEFAULT_MANAGERS;
+  return FM_CATS.map((cat) => ({
+    key: "fm_" + cat.key, catKey: cat.key, mid: cat.mid, title: cat.label, icon: "🧑‍💼",
+    mode: "multi", searchable: managers.length > 8,
+    selections: managers.map((m) => {
+      const o = cfg?.odds?.[cat.key]?.[m.id] || "5/1";
+      return { id: `${cat.key}__${m.id}`, label: m.name, oddsStr: o, odds: toDecimal(o), meta: { fm: cat.key, mid: cat.mid, mgrId: m.id } };
+    }),
+  }));
+}
+
 // Predicted XI (10 outfield starters) per team — used for scorer player dropdowns
 const SQUADS = {"Mexico":["Jesus Gallardo","Cesar Montes","Johan Vasquez","Jorge Sanchez","Edson Alvarez","Luis Romo","Orbelin Pineda","Alexis Vega","Santiago Gimenez","Cesar Huerta","Raul Rangel","Guillermo Ochoa","Carlos Acevedo","Israel Reyes","Mateo Chavez","Luis Chavez","Gilberto Mora","Obed Vargas","Alvaro Fidalgo","Roberto Alvarado","Brian Gutierrez","Raul Jimenez","Julian Quinones","Guillermo Martinez","Armando Gonzalez"],"South Africa":["Aubrey Modiba","Mbekezeli Mbokazi","Nkosinathi Sibisi","Khuliso Mudau","Teboho Mokoena","Thalente Mbatha","Sphephelo Sithole","Oswin Appollis","Lyle Foster","Themba Zwane","Ronwen Williams","Sipho Chaine","Ricardo Goss","Thabang Matuludi","Khulumani Ndamane","Samukele Kabini","Ime Okon","Olwethu Makhanya","Bradley Cross","Jayden Adams","Relebohile Mofokeng","Thapelo Maseko","Iqraam Rayners","Evidence Makgopa","Kamogelo Sebelebele"],"Korea Republic":["Seol Young-woo","Kim Min-jae","Kim Tae-hyeon","Kim Moon-hwan","Hwang In-beom","Paik Seung-ho","Hwang Hee-chan","Lee Kang-in","Son Heung-min","Cho Gue-sung","Kim Seung-gyu","Jo Hyeon-woo","Song Bum-keun","Lee Han-beom","Park Jin-seob","Lee Tae-seok","Cho Wi-je","Jens Castrop","Lee Ki-hyuk","Lee Jae-sung","Kim Jin-gyu","Bae Jun-ho","Eom Ji-sung","Yang Hyun-jun","Lee Dong-gyeong","Oh Hyeon-gyu"],"Czech Republic":["Vladimir Coufal","Ladislav Krejci","Robin Hranac","David Jurasek","Tomas Soucek","Lukas Cerv","Lukas Provod","Pavel Sulc","Adam Hlozek","Patrik Schick","Matej Kovar","Jindrich Stanek","Lukas Hornicek","David Zima","Tomas Holes","Stepan Chaloupek","Jaroslav Zeleny","David Doudera","Vladimir Darida","Michal Sadilek","Alexandr Sojka","Hugo Sochurek","Denis Visinsky","Jan Kuchta","Mojmir Chytil","Tomas Chory"],"Canada":["Alistair Johnston","Derek Cornelius","Moise Bombito","Alphonso Davies","Stephen Eustaquio","Ismael Kone","Mathieu Choiniere","Tajon Buchanan","Jonathan David","Jacob Shaffelburg","Dayne St. Clair","Maxime Crepeau","Owen Goodman","Alfie Jones","Joel Waterman","Richie Laryea","Niko Sigur","Luc de Fougerolles","Liam Millar","Ali Ahmed","Jonathan Osorio","Nathan Saliba","Cyle Larin","Tani Oluwaseyi","Promise David"],"Bosnia and Herzegovina":["Amar Dedic","Sead Kolasinac","Nikola Katic","Dennis Hadzikadunic","Amir Hadziahmetovic","Benjamin Tahirovic","Armin Gigovic","Esmir Bajraktarevic","Ermedin Demirovic","Edin Dzeko","Nikola Vasilj","Martin Zlomislic","Mladen Jurkas","Nihad Mujakic","Tarik Muharemovic","Stjepan Radeljic","Nidal Celik","Ivan Basic","Ivan Sunjic","Amar Memic","Dzenis Burnic","Ermin Mahmic","Samed Bazdar","Kerim Alajbegovic","Haris Tabakovic","Jovo Lukic"],"Qatar":["Pedro Miguel","Boualem Khoukhi","Homam Ahmed","Lucas Mendes","Assim Madibo","Karim Boudiaf","Akram Afif","Hassan Al-Haydos","Yusuf Abdurisag","Almoez Ali","Meshaal Barsham","Mahmoud Abunada","Salah Zakaria","Issa Laye","Ayoub Al-Oui","Sultan Al-Brake","Al-Hashmi Al-Hussain","Jassem Gaber","Abdulaziz Hatem","Ahmed Fathy","Mohamed Al-Mannai","Ahmed Alaaeldin","Edmilson Junior","Mohammed Muntari","Ahmed Al-Ganehi","Tahsin Jamshid"],"Switzerland":["Silvan Widmer","Manuel Akanji","Nico Elvedi","Ricardo Rodriguez","Granit Xhaka","Remo Freuler","Dan Ndoye","Johan Manzambi","Ruben Vargas","Breel Embolo","Gregor Kobel","Yvon Mvogo","Marvin Keller","Miro Muheim","Eray Comert","Aurele Amenda","Luca Jaquez","Denis Zakaria","Ardon Jashari","Djibril Sow","Christian Fassnacht","Michel Aebischer","Fabian Rieder","Noah Okafor","Zeki Amdouni","Cedric Itten"],"Brazil":["Wesley","Marquinhos","Gabriel Magalhaes","Douglas Santos","Casemiro","Bruno Guimaraes","Lucas Paqueta","Raphinha","Matheus Cunha","Vinicius Junior","Alisson","Weverton","Ederson","Alex Sandro","Danilo Luiz","Bremer","Leo Pereira","Roger Ibanez","Fabinho","Danilo Santos","Neymar","Endrick","Luiz Henrique","Gabriel Martinelli","Igor Thiago","Rayan"],"Morocco":["Achraf Hakimi","Nayef Aguerd","Chadi Riad","Noussair Mazraoui","Sofyan Amrabat","Azzedine Ounahi","Bilal El Khannouss","Brahim Diaz","Ayoub El Kaabi","Abde Ezzalzouli","Yassine Bounou","Munir Mohamedi","Ahmed Reda Tagnaouti","Youssef Belammari","Anass Salah-Eddine","Issa Diop","Zakaria El Ouahdi","Redouane Halhal","Ismael Saibari","Neil El Aynaoui","Samir El Mourabet","Ayyoub Bouaddi","Soufiane Rahimi","Chemsdine Talbi","Gessime Yassine","Ayoube Amaimouni"],"Haiti":["Carlens Arcus","Ricardo Ade","Hannes Delcroix","Jean-Kevin Duverne","Carl Sainte","Danley Jean Jacques","Jean-Ricner Bellegarde","Derrick Etienne Jr.","Frantzdy Pierrot","Duckens Nazon","Johny Placide","Alexandre Pierre","Josue Duverger","Martin Experience","Duke Lacroix","Wilguens Paugain","Keeto Thermoncy","Leverton Pierre","Woodensky Pierre","Dominique Simon","Louicius Deedson","Ruben Providence","Josue Casimir","Yassin Fortune","Wilson Isidor","Lenny Joseph"],"Scotland":["Jack Hendry","John Souttar","Scott McKenna","Aaron Hickey","John McGinn","Scott McTominay","Lewis Ferguson","Andy Robertson","Che Adams","Lyndon Dykes","Angus Gunn","Liam Kelly","Craig Gordon","Grant Hanley","Kieran Tierney","Nathan Patterson","Anthony Ralston","Dominic Hyam","Tyler Fletcher","Ryan Christie","Kenny McLean","Ben Gannon-Doak","Findlay Curtis","Ross Stewart","George Hirst","Lawrence Shankland"],"United States":["Sergino Dest","Chris Richards","Tim Ream","Antonee Robinson","Tyler Adams","Weston McKennie","Malik Tillman","Timothy Weah","Folarin Balogun","Christian Pulisic","Matt Turner","Matt Freese","Chris Brady","Miles Robinson","Alex Freeman","Max Arfsten","Mark McKenzie","Joe Scally","Auston Trusty","Giovanni Reyna","Sebastian Berhalter","Cristian Roldan","Ricardo Pepi","Haji Wright","Brenden Aaronson","Alejandro Zendejas"],"Paraguay":["Gustavo Velazquez","Gustavo Gomez","Fabian Balbuena","Omar Alderete","Andres Cubas","Miguel Almiron","Diego Gomez","Ramon Sosa","Antonio Sanabria","Julio Enciso","Gatito Fernandez","Orlando Gill","Gaston Olveira","Juan Caceres","Jose Canale","Alexandro Maidana","Junior Alonso","Mauricio","Damian Bobadilla","Braian Ojeda","Matias Galarza","Kaku","Alex Arce","Gabriel Avalos","Gustavo Caballero","Isidro Pitta"],"Australia":["Jason Geria","Harry Souttar","Alessandro Circati","Aziz Behich","Jackson Irvine","Connor Metcalfe","Ajdin Hrustic","Mathew Leckie","Awer Mabil","Mohamed Toure","Mathew Ryan","Paul Izzo","Patrick Beach","Milos Degenek","Jacob Italiano","Jordan Bos","Kai Trewin","Cameron Burgess","Lucas Herrington","Aiden O'Neill","Cameron Devlin","Paul Okon-Engstler","Nestory Irankunda","Cristian Volpato","Nishan Velupillay","Tete Yengi"],"Turkey":["Zeki Celik","Merih Demiral","Abdulkerim Bardakci","Ferdi Kadioglu","Hakan Calhanoglu","Orkun Kokcu","Kerem Akturkoglu","Arda Guler","Kenan Yildiz","Baris Alper Yilmaz","Ugurcan Cakir","Mert Gunok","Altay Bayindir","Caglar Soyuncu","Eren Elmali","Ozan Kabak","Mert Muldur","Samet Akaydin","Salih Ozcan","Ismail Yuksek","Kaan Ayhan","Deniz Gul","Irfan Can Kahveci","Yunus Akgun","Oguz Aydin","Can Uzun"],"Germany":["Joshua Kimmich","Jonathan Tah","Nico Schlotterbeck","David Raum","Aleksandar Pavlovic","Leon Goretzka","Jamal Musiala","Florian Wirtz","Leroy Sane","Kai Havertz","Manuel Neuer","Oliver Baumann","Alexander Nubel","Antonio Rudiger","Waldemar Anton","Nathaniel Brown","Malick Thiaw","Jamie Leweling","Pascal Gross","Angelo Stiller","Nadiem Amiri","Felix Nmecha","Assan Ouedraogo","Nick Woltemade","Maximilian Beier","Deniz Undav"],"Curaçao":["Shurandy Sambo","Riechedly Bazoer","Armando Obispo","Joshua Brenet","Leandro Bacuna","Livano Comenencia","Godfried Roemeratoe","Juninho Bacuna","Jurgen Locadia","Tahith Chong","Eloy Room","Tyrick Bodak","Trevor Doornbusch","Jurien Gaari","Roshon van Eijma","Sherel Floranus","Deveron Fonville","Kevin Felida","Tyrese Noslin","Ar'jany Martha","Jeremy Antonisse","Sontje Hansen","Kenji Gorre","Jearl Margaritha","Brandley Kuwas","Gervane Kastaneer"],"Ivory Coast":["Wilfried Singo","Odilon Kossounou","Evan Ndicka","Ghislain Konan","Franck Kessie","Ibrahim Sangare","Jean Michael Seri","Simon Adingra","Ange-Yoan Bonny","Amad Diallo","Yahia Fofana","Mohamed Kone","Alban Lafont","Ousmane Diomande","Christopher Operi","Guela Doue","Emmanuel Agbadou","Seko Fofana","Parfait Guiagon","Christ Inao Oulai","Yan Diomande","Elye Wahi","Oumar Diakite","Nicolas Pepe","Evann Guessand","Bazoumana Toure"],"Ecuador":["Angelo Preciado","Piero Hincapie","Willian Pacho","Pervis Estupinan","Moises Caicedo","Alan Franco","Kendry Paez","Gonzalo Plata","Enner Valencia","Kevin Rodriguez","Hernan Galindez","Moises Ramirez","Gonzalo Valle","Felix Torres","Joel Ordonez","Jackson Porozo","Denil Castillo","John Yeboah","Alan Minda","Pedro Vite","Yaimar Medina","Jordy Alcivar","Nilson Angulo","Anthony Valencia","Jordy Caicedo","Jeremy Arevalo"],"Netherlands":["Denzel Dumfries","Virgil van Dijk","Micky van de Ven","Nathan Ake","Frenkie de Jong","Tijjani Reijnders","Ryan Gravenberch","Donyell Malen","Memphis Depay","Cody Gakpo","Bart Verbruggen","Mark Flekken","Robin Roefs","Jurrien Timber","Jan Paul van Hecke","Mats Wieffer","Jorrel Hato","Marten de Roon","Teun Koopmeiners","Quinten Timber","Guus Til","Justin Kluivert","Wout Weghorst","Brian Brobbey","Noa Lang","Crysencio Summerville"],"Japan":["Ko Itakura","Takehiro Tomiyasu","Hiroki Ito","Yukinari Sugawara","Wataru Endo","Ao Tanaka","Yuto Nagatomo","Takefusa Kubo","Ritsu Doan","Ayase Ueda","Zion Suzuki","Keisuke Osako","Tomoki Hayakawa","Shogo Taniguchi","Tsuyoshi Watanabe","Ayumu Seko","Junnosuke Suzuki","Daichi Kamada","Junya Ito","Keito Nakamura","Kaishu Sano","Keisuke Goto","Daizen Maeda","Yuito Suzuki","Koki Ogawa","Kento Shiogai"],"Sweden":["Gabriel Gudmundsson","Victor Lindelof","Isak Hien","Daniel Svensson","Lucas Bergvall","Jesper Karlstrom","Yasin Ayari","Anthony Elanga","Viktor Gyokeres","Alexander Isak","Jacob Widell Zetterstrom","Viktor Johansson","Kristoffer Nordfeldt","Gustaf Lagerbielke","Herman Johansson","Hjalmar Ekdal","Carl Starfelt","Eric Smith","Elliot Stroud","Mattias Svanberg","Besfort Zeneli","Ken Sema","Benjamin Nygren","Alexander Bernhardsson","Gustaf Nilsson","Taha Ali"],"Tunisia":["Yan Valery","Montassar Talbi","Dylan Bronn","Ali Abdi","Ellyes Skhiri","Hannibal Mejbri","Anis Ben Slimane","Elias Achouri","Elias Saad","Sebastian Tounekti","Aymen Dahmen","Mouhib Chamakh","Sabri Ben Hessen","Omar Rekik","Adem Arous","Mortadha Ben Ouanes","Mohamed Amine Ben Hamida","Moutaz Neffati","Raed Chikhaoui","Ismael Gharbi","Rani Khedira","Hadj Mahmoud","Khalil Ayari","Hazem Mastouri","Firas Chaouat","Rayan Elloumi"],"Belgium":["Timothy Castagne","Koni De Winter","Arthur Theate","Maxim De Cuyper","Amadou Onana","Youri Tielemans","Alexis Saelemaekers","Kevin De Bruyne","Jeremy Doku","Romelu Lukaku","Thibaut Courtois","Senne Lammens","Mike Penders","Zeno Debast","Brandon Mechele","Thomas Meunier","Joaquin Seys","Nathan Ngoy","Axel Witsel","Diego Moreira","Hans Vanaken","Nicolas Raskin","Leandro Trossard","Dodi Lukebakio","Charles De Ketelaere","Matias Fernandez-Pardo"],"Egypt":["Mohamed Hany","Yasser Ibrahim","Mohamed Abdelmonem","Karim Hafez","Emam Ashour","Marwan Attia","Trezeguet","Zizo","Mohamed Salah","Omar Marmoush","Mohamed El Shenawy","El Mahdy Soliman","Mostafa Shobeir","Mohamed Alaa","Hossam Abdelmaguid","Ramy Rabia","Ahmed Abou El Fotouh","Tarek Alaa","Mostafa Ziko","Hamdy Fathy","Mohanad Lasheen","Nabil Emad","Mahmoud Saber","Hamza Abdelkarim","Haissem Hassan","Ibrahim Adel"],"Iran":["Ramin Rezaeian","Shojae Khalilzadeh","Hossein Kanaanizadegan","Milad Mohammadi","Saeid Ezatolahi","Saman Ghoddos","Alireza Jahanbakhsh","Mohammad Mohebi","Mehdi Taremi","Mehdi Ghayedi","Alireza Beiranvand","Payam Niazmand","Hossein Hosseini","Saleh Hardani","Ehsan Hajsafi","Aria Yousefi","Ali Nemati","Danial Eiri","Rouzbeh Cheshmi","Mehdi Torabi","Mohammad Ghorbani","Amirmohammad Rassaghinia","Ali Alipour","Amirhossein Hosseinzadeh","Shahriyar Moghanlou","Dennis Eckert"],"New Zealand":["Tim Payne","Tyler Bindon","Michael Boxall","Liberato Cacace","Joe Bell","Alex Rufer","Marko Stamenic","Sarpreet Singh","Ben Old","Chris Wood","Max Crocombe","Alex Paulsen","Michael Woud","Francis De Vries","Nando Pijnaker","Finn Surman","Callan Elliot","Tommy Smith","Ryan Thomas","Lachlan Bayliss","Matt Garbett","Eli Just","Kosta Barbarouses","Ben Waine","Callum McCowatt","Jesse Randall"],"Spain":["Pedro Porro","Aymeric Laporte","Pau Cubarsi","Marc Cucurella","Pedri","Rodri","Mikel Merino","Lamine Yamal","Mikel Oyarzabal","Nico Williams","David Raya","Joan Garcia","Unai Simon","Marc Pubill","Alex Grimaldo","Eric Garcia","Marcos Llorente","Fabian Ruiz","Gavi","Dani Olmo","Alex Baena","Martin Zubimendi","Ferran Torres","Yeremy Pino","Victor Munoz","Borja Iglesias"],"Cape Verde":["Wagner Pina","Roberto Lopes","Logan Costa","Stopira","Kevin Pina","Joao Paulo","Jamiro Monteiro","Jovane Cabral","Dailon Livramento","Garry Rodrigues","Vozinha","Marcio Rosa","CJ dos Santos","Diney","Sidny Lopes Cabral","Steven Moreira","Kelvin Pires","Deroy Duarte","Laros Duarte","Yannick Semedo","Telmo Arcanjo","Nuno da Costa","Gilson Benchimol","Willy Semedo","Ryan Mendes","Helio Varela"],"Saudi Arabia":["Saud Abdulhamid","Abdulelah Al-Amri","Hassan Al-Tambakti","Nawaf Boushal","Mohamed Kanno","Nasser Al-Dawsari","Khalid Al-Ghannam","Musab Al-Juwayr","Salem Al-Dawsari","Firas Al-Buraikan","Nawaf Al-Aqidi","Mohammed Al-Owais","Ahmed Al-Kasser","Ali Majrashi","Ali Lajami","Hassan Kadesh","Moteb Al-Harbi","Jehad Thakri","Mohammed Abu Al-Shamat","Abdullah Al-Khaibari","Ziyad Al-Johani","Alla Al-Heiji","Ayman Yahya","Saleh Al-Shehri","Abdullah Al-Hamdan","Sultan Mandash"],"Uruguay":["Guillermo Varela","Jose Maria Gimenez","Ronald Araujo","Mathias Olivera","Manuel Ugarte","Federico Valverde","Rodrigo Bentancur","Facundo Pellistri","Darwin Nunez","Giorgian de Arrascaeta","Sergio Rochet","Santiago Mele","Fernando Muslera","Sebastian Caceres","Santiago Bueno","Matias Vina","Nicolas de la Cruz","Agustin Canobbio","Maximiliano Araujo","Emiliano Martinez","Joaquin Piquerez","Rodrigo Zalazar","Juan Manuel Sanabria","Brian Rodriguez","Rodrigo Aguirre","Federico Vinas"],"France":["Jules Kounde","William Saliba","Dayot Upamecano","Theo Hernandez","Aurelien Tchouameni","Adrien Rabiot","Manu Kone","Ousmane Dembele","Kylian Mbappe","Michael Olise","Mike Maignan","Brice Samba","Robin Risser","Malo Gusto","Lucas Digne","Ibrahima Konate","Lucas Hernandez","Maxence Lacroix","Warren Zaire-Emery","N'Golo Kante","Marcus Thuram","Bradley Barcola","Desire Doue","Jean-Philippe Mateta","Rayan Cherki","Maghnes Akliouche"],"Senegal":["Krepin Diatta","Kalidou Koulibaly","Abdoulaye Seck","El Hadji Malick Diouf","Idrissa Gueye","Pape Matar Sarr","Lamine Camara","Ismaila Sarr","Nicolas Jackson","Sadio Mane","Edouard Mendy","Mory Diaw","Yehvann Diouf","Moussa Niakhate","Ismail Jakobs","Mamadou Sarr","Antoine Mendy","Pape Gueye","Pathe Ciss","Habib Diarra","Bara Ndiaye","Iliman Ndiaye","Bamba Dieng","Cherif Ndiaye","Ibrahim Mbaye","Assane Diao"],"Iraq":["Merchas Doski","Zaid Tahseen","Manaf Younis","Hussein Ali","Zidane Iqbal","Amir Al-Ammari","Youssef Amyn","Aimar Sher","Kevin Yakob","Mohanad Ali","Fahad Talib","Jalal Hassan","Ahmed Basil","Rebin Sulaka","Akam Hashim","Ahmed Maknzi","Mustafa Saadoon","Frans Putros","Ibrahim Bayesh","Zaid Ismail","Ali Al-Hamadi","Ahmed Qasem","Ali Yousuf","Ali Jasim","Aymen Hussein","Marko Farji"],"Norway":["Julian Ryerson","Kristoffer Ajer","Leo Ostigard","David Moller Wolfe","Sander Berge","Martin Odegaard","Fredrik Aursnes","Antonio Nusa","Erling Haaland","Alexander Sorloth","Orjan Nyland","Sander Tangvik","Egil Selvik","Fredrik Andre Bjorkan","Marcus Holmgren Pedersen","Torbjorn Heggem","Sondre Langas","Henrik Falchener","Morten Thorsby","Patrick Berg","Kristian Thorstvedt","Thelo Aasgaard","Andreas Schjelderup","Oscar Bobb","Jens Petter Hauge","Jorgen Strand Larsen"],"Argentina":["Nahuel Molina","Cristian Romero","Nicolas Otamendi","Nicolas Tagliafico","Rodrigo De Paul","Leandro Paredes","Alexis Mac Allister","Lionel Messi","Lautaro Martinez","Julian Alvarez","Emiliano Martinez","Juan Musso","Geronimo Rulli","Leonardo Balerdi","Gonzalo Montiel","Lisandro Martinez","Facundo Medina","Valentin Barco","Giovani Lo Celso","Exequiel Palacios","Enzo Fernandez","Nicolas Gonzalez","Thiago Almada","Giuliano Simeone","Nico Paz","Jose Manuel Lopez"],"Algeria":["Rafik Belghali","Aissa Mandi","Mohamed Amine Tougai","Rayan Ait-Nouri","Ramiz Zerrouki","Nabil Bentaleb","Houssem Aouar","Riyad Mahrez","Amine Gouiri","Mohamed Amoura","Melvin Mastil","Oussama Benbot","Luca Zidane","Achref Abada","Zineddine Belaid","Jaouen Hadjam","Samir Chergui","Ramy Bensebaini","Hicham Boudaoui","Fares Chaibi","Ibrahim Maza","Yacine Titraoui","Anis Hadj Moussa","Nadhir Benbouali","Adil Boulbina","Fares Ghedjemis"],"Austria":["Stefan Posch","Kevin Danso","David Alaba","Philipp Mwene","Xaver Schlager","Nicolas Seiwald","Konrad Laimer","Marcel Sabitzer","Patrick Wimmer","Marko Arnautovic","Alexander Schlager","Florian Wiegele","Patrick Pentz","David Affengruber","Philipp Lienhart","Marco Friedl","Michael Svoboda","Alexander Prass","Florian Grillitsch","Carney Chukwuemeka","Romano Schmid","Paul Wanner","Alessandro Schopf","Michael Gregoritsch","Sasa Kalajdzic"],"Jordan":["Mohammad Abu Hashish","Yazan Al-Arab","Saed Al-Rosan","Salim Obaid","Amer Jamous","Rajaei Ayed","Noor Al-Rawabdeh","Musa Al-Taamari","Odeh Al-Fakhouri","Ali Olwan","Yazeed Abulaila","Nour Bani Attiah","Abdallah Al-Fakhouri","Abdallah Nasib","Husam Abu Dahab","Mohammad Abualnadi","Ihsan Haddad","Anas Badawi","Ibrahim Sadeh","Mohannad Abu Taha","Nizar Al-Rashdan","Mohammad Al-Dawoud","Mohammad Abu Zrayq","Mahmoud Al-Mardi","Ibrahim Sabra","Ali Azaizeh"],"Portugal":["Diogo Dalot","Ruben Dias","Goncalo Inacio","Nuno Mendes","Vitinha","Joao Neves","Bruno Fernandes","Bernardo Silva","Cristiano Ronaldo","Rafael Leao","Diogo Costa","Jose Sa","Rui Silva","Nelson Semedo","Joao Cancelo","Renato Veiga","Tomas Araujo","Matheus Nunes","Francisco Trincao","Ruben Neves","Samu Costa","Goncalo Ramos","Joao Felix","Pedro Neto","Goncalo Guedes","Francisco Conceicao"],"DR Congo":["Aaron Wan-Bissaka","Chancel Mbemba","Axel Tuanzebe","Arthur Masuaku","Ngal'ayel Mukau","Noah Sadiki","Theo Bongonda","Gael Kakuta","Fiston Mayele","Yoane Wissa","Lionel Mpasi","Timothy Fayulu","Matthieu Epolo","Steve Kapuadi","Dylan Batubinsika","Joris Kayembe","Gedeon Kalulu","Nathanael Mbuku","Samuel Moutoussamy","Meschak Elia","Aaron Tshibola","Charles Pickel","Edo Kayembe","Brian Cipenga","Cedric Bakambu","Simon Banza"],"Uzbekistan":["Khojiakbar Alijonov","Abdukodir Khusanov","Rustam Ashurmatov","Farrukh Sayfiev","Odiljon Hamrobekov","Jamshid Iskanderov","Jaloliddin Masharipov","Abbosbek Fayzullaev","Oston Urunov","Eldor Shomurodov","Utkir Yusupov","Abduvohid Nematov","Botirali Ergashev","Sherzod Nasrullaev","Umar Eshmurodov","Abdulla Abdullaev","Bekhruz Karimov","Avazbek Ulmasaliev","Jakhongir Urozov","Otabek Shukurov","Dostonbek Khamdamov","Azizjon Ganiev","Sherzod Esanov","Azizbek Amonov","Igor Sergeev"],"Colombia":["Daniel Munoz","Jhon Lucumi","Davinson Sanchez","Johan Mojica","Jefferson Lerma","Richard Rios","Jhon Arias","James Rodriguez","Luis Diaz","Jhon Cordoba","David Ospina","Camilo Vargas","Alvaro Montero","Santiago Arias","Yerry Mina","Willer Ditta","Deiver Machado","Kevin Castano","Jorge Carrascal","Gustavo Puerta","Juan Camilo Portilla","Juan Fernando Quintero","Jaminton Campaz","Cucho Hernandez","Luis Suarez","Carlos Andres Gomez"],"England":["Reece James","John Stones","Marc Guehi","Nico O'Reilly","Declan Rice","Elliot Anderson","Bukayo Saka","Jude Bellingham","Eberechi Eze","Harry Kane","Jordan Pickford","Dean Henderson","James Trafford","Ezri Konsa","Tino Livramento","Dan Burn","Djed Spence","Jarell Quansah","Jordan Henderson","Kobbie Mainoo","Morgan Rogers","Marcus Rashford","Anthony Gordon","Ollie Watkins","Noni Madueke","Ivan Toney"],"Croatia":["Josip Stanisic","Josip Sutalo","Josko Gvardiol","Ivan Perisic","Luka Modric","Mateo Kovacic","Luka Sucic","Nikola Vlasic","Ante Budimir","Andrej Kramaric","Dominik Livakovic","Ivor Pandur","Dominik Kotarski","Marin Pongracic","Duje Caleta-Car","Kristijan Jakic","Luka Vuskovic","Martin Erlic","Nikola Moro","Mario Pasalic","Martin Baturina","Petar Sucic","Toni Fruk","Marco Pasalic","Petar Musa","Igor Matanovic"],"Ghana":["Alidu Seidu","Abdul Mumin","Jonas Adjetey","Gideon Mensah","Thomas Partey","Caleb Yirenkyi","Abdul Fatawu","Antoine Semenyo","Kamaldeen Sulemana","Inaki Williams","Lawrence Ati-Zigi","Joseph Anang","Benjamin Asare","Abdul Rahman Baba","Jerome Opoku","Kojo Peprah Oppong","Derrick Luckassen","Marvin Senaya","Kwasi Sibo","Elisha Owusu","Augustine Boakye","Jordan Ayew","Brandon Thomas-Asante","Christopher Bonsu Baah","Ernest Nuamah","Prince Kwabena Adu"],"Panama":["Cesar Blackman","Jose Cordoba","Fidel Escobar","Eric Davis","Adalberto Carrasquilla","Anibal Godoy","Jose Luis Rodriguez","Ismael Diaz","Yoel Barcenas","Jose Fajardo","Luis Mejia","Cesar Samudio","Orlando Mosquera","Edgardo Farina","Jiovany Ramos","Carlos Harvey","Andres Andrade","Michael Amir Murillo","Roderick Miller","Jorge Gutierrez","Cristian Martinez","Alberto Quintero","Cesar Yanis","Tomas Rodriguez","Cecilio Waterman","Azarias Londono"]};
 
@@ -342,6 +377,7 @@ function knownScorerNames(m, cfg = {}) {
 /* ---------- settlement engine ---------- */
 function evaluateItem(item, R) {
   const { marketKey, meta } = item;
+  if (marketKey && marketKey.startsWith("fm_")) return !!R?.fmWinner && item.selId === R.fmWinner;
   const ftH = R.ft?.h, ftA = R.ft?.a, htH = R.ht?.h, htA = R.ht?.a;
   const total = (ftH ?? 0) + (ftA ?? 0);
   switch (marketKey) {
@@ -449,7 +485,7 @@ function recomputeBet(bet, resultsMap) {
 }
 
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
-const matchName = (id) => { if (+id === -1) return "Tournament Outrights"; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
+const matchName = (id) => { if (+id === -1) return "Tournament Outrights"; const fc = FM_CATS.find((c) => c.mid === +id); if (fc) return `Fantasy Manager — ${fc.label}`; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
 const fmtN = (n) => Math.round(n).toLocaleString();
 const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
 // realized profit/loss for one selection: won slip → stake×(odds−1); lost slip → −stake; open → 0 (pending)
@@ -585,6 +621,7 @@ export default function App() {
   const [activeMatch, setActiveMatch] = useState(null);
   const [slip, setSlip] = useState([]);
   const [ogSlip, setOgSlip] = useState([]);
+  const [fmSlip, setFmSlip] = useState([]);
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [recovery, setRecovery] = useState(false);
@@ -685,6 +722,23 @@ export default function App() {
     await refresh();
   };
 
+  // Fantasy Manager: each category settles independently at its own pseudo-match id (uses MATCH wallet)
+  const settleFantasy = async (mid, selId) => {
+    const R = { fmWinner: selId };
+    await db.upsertResult(mid, R, session.user.id);
+    const newResults = { ...results, [mid]: R };
+    const affected = bets.filter((b) => b.kind === "fantasy" && b.items.some((it) => it.matchId === mid));
+    for (const b of affected) await db.updateBet(b.id, recomputeBet(b, newResults));
+    await refresh();
+  };
+  const resetFantasy = async (mid) => {
+    await db.deleteResult(mid);
+    const newResults = { ...results }; delete newResults[mid];
+    const affected = bets.filter((b) => b.kind === "fantasy" && b.items.some((it) => it.matchId === mid));
+    for (const b of affected) await db.updateBet(b.id, recomputeBet(b, newResults));
+    await refresh();
+  };
+
   if (!hasSupabase) return <ConfigNeeded />;
   if (!authReady) return <Splash msg="Loading…" />;
   if (recovery) return <ResetPassword showToast={showToast} onDone={() => setRecovery(false)} />;
@@ -694,13 +748,15 @@ export default function App() {
   const role = profile.is_admin ? "admin" : "player";
   const user = { nickname: profile.nickname, role };
   const allMine = bets.filter((b) => b.userId === session.user.id);
-  const myBets = allMine.filter((b) => b.kind !== "outright");
+  const myWalletBets = allMine.filter((b) => b.kind !== "outright"); // match wallet = match + fantasy
+  const myMatchBets = allMine.filter((b) => (b.kind || "match") === "match");
+  const myFantasyBets = allMine.filter((b) => b.kind === "fantasy");
   const myOgBets = allMine.filter((b) => b.kind === "outright");
-  const wallet = walletOf(profile, myBets);
+  const wallet = walletOf(profile, myWalletBets);
   const ogWallet = walletOg(profile, myOgBets);
   const matchBets = bets.filter((b) => b.kind !== "outright");
   const ogConfig = configs[-1];
-  const ogResult = results[-1];
+  const fmConfig = configs[-2];
 
   return (
     <div className={dark ? "dark" : ""}>
@@ -711,7 +767,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} />}
@@ -719,7 +775,8 @@ export default function App() {
                   <MatchDetail match={activeMatch} config={configs[activeMatch.n]} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
                 {tab === "outrights" && <Outrights config={ogConfig} wallet={ogWallet} slip={ogSlip} setSlip={setOgSlip} now={now} ogBets={myOgBets} nickname={profile.nickname} />}
-                {tab === "mybets" && <MyBets bets={myBets} wallet={wallet} nickname={profile.nickname} txns={txns} />}
+                {tab === "fantasy" && <Fantasy config={fmConfig} wallet={wallet} results={results} slip={fmSlip} setSlip={setFmSlip} fmBets={myFantasyBets} nickname={profile.nickname} />}
+                {tab === "mybets" && <MyBets bets={myMatchBets} wallet={wallet} nickname={profile.nickname} txns={txns} />}
                 {tab === "board" && <Leaderboard bets={matchBets} me={profile.nickname} />}
               </>
             )}
@@ -729,7 +786,8 @@ export default function App() {
             <>
               <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
               {tab === "outrights" && <OutrightSlip slip={ogSlip} setSlip={setOgSlip} user={user} placeBet={placeBet} available={ogWallet.net} now={now} showToast={showToast} setTab={setTab} />}
-              <BottomNav tab={tab} setTab={(t) => { setTab(t); setActiveMatch(null); }} slipCount={slip.length} ogCount={ogSlip.length} />
+              {tab === "fantasy" && <FantasySlip slip={fmSlip} setSlip={setFmSlip} user={user} placeBet={placeBet} available={wallet.net} showToast={showToast} setTab={setTab} />}
+              <BottomNav tab={tab} setTab={(t) => { setTab(t); setActiveMatch(null); }} slipCount={slip.length} ogCount={ogSlip.length} fmCount={fmSlip.length} />
             </>
           )}
 
@@ -1398,6 +1456,140 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast
 }
 
 
+/* ---------- Fantasy Manager (player) — uses the MATCH wallet ---------- */
+function Fantasy({ config, wallet, results, slip, setSlip, fmBets = [], nickname }) {
+  const markets = useMemo(() => buildFantasyMarkets(config), [config]);
+  const inSlip = (selId) => slip.some((s) => s.selId === selId);
+  const toggle = (mk, s) => {
+    if (results[mk.mid]) return; // category already settled
+    setSlip((prev) => {
+      if (prev.find((x) => x.selId === s.id)) return prev.filter((x) => x.selId !== s.id);
+      return [...prev, { matchId: mk.mid, match: `Fantasy — ${mk.title}`, marketKey: mk.key, marketTitle: mk.title, selId: s.id, label: s.label, odds: s.odds, oddsStr: s.oddsStr, meta: s.meta, stake: FANTASY_RULES.min }];
+    });
+  };
+  return (
+    <div>
+      <SectionTitle icon={<Users className="h-5 w-5" />} title="Fantasy Manager" sub="Pick the best manager each matchday · uses your match wallet" />
+      <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm">
+        <span className="font-semibold text-emerald-300">Match wallet balance</span>
+        <span className="font-bold text-white">{money(wallet.net)}</span>
+      </div>
+      <p className="mb-3 text-xs text-stone-500">Stake {money(FANTASY_RULES.min)}–{money(FANTASY_RULES.max)} per pick · paid from your match wallet. A matchday closes once the admin settles it.</p>
+      <div className="space-y-3">
+        {markets.map((mk) => {
+          const settled = results[mk.mid];
+          return (
+            <div key={mk.key}>
+              {settled && <div className="mb-1 ml-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-400/80">Settled</div>}
+              <MarketCard mk={mk} inSlip={inSlip} toggle={toggle} disabled={!!settled} />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-8">
+        <SectionTitle icon={<Receipt className="h-5 w-5" />} title="My Fantasy Picks" sub={`${fmBets.length} submitted`} />
+        {fmBets.length > 0 && (
+          <button onClick={() => printPicks(fmBets, `${nickname} — Fantasy Picks`, false)}
+            className="mb-3 flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+            <Receipt className="h-3.5 w-3.5" /> Download PDF
+          </button>
+        )}
+        <div className="space-y-2.5">
+          {fmBets.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No fantasy picks yet.</p>}
+          {fmBets.map((b) => <BetCard key={b.id} b={b} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FantasySlip({ slip, setSlip, user, placeBet, available, showToast, setTab }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [placed, setPlaced] = useState(null);
+  const setStake = (id, v) => setSlip((p) => p.map((x) => x.selId === id ? { ...x, stake: Math.max(0, +v || 0) } : x));
+  const remove = (id) => setSlip((p) => p.filter((x) => x.selId !== id));
+  const totalStake = slip.reduce((a, s) => a + s.stake, 0);
+  const potential = slip.reduce((a, s) => a + s.stake * s.odds, 0);
+
+  const validate = () => {
+    if (slip.length === 0) return "Your fantasy slip is empty";
+    for (const s of slip) {
+      if (s.stake < FANTASY_RULES.min) return `Min stake is ${money(FANTASY_RULES.min)} per pick`;
+      if (s.stake > FANTASY_RULES.max) return `Max stake is ${money(FANTASY_RULES.max)} per pick`;
+    }
+    if (totalStake > available) return `Not enough match Coins — you have ${money(available)}.`;
+    return null;
+  };
+  const place = async () => {
+    const err = validate(); if (err) { showToast(err, "err"); return; }
+    const bet = { id: uid(), code: betCode(), user: user.nickname, ts: new Date().toISOString(),
+      items: slip.map((s) => ({ ...s, status: "open" })), totalStake, potential, status: "open", kind: "fantasy" };
+    setBusy(true);
+    try { await placeBet(bet); setPlaced(bet); setSlip([]); }
+    catch (e) { showToast(e.message || "Could not submit", "err"); }
+    finally { setBusy(false); }
+  };
+
+  if (placed) return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={() => { setPlaced(null); setOpen(false); setTab("fantasy"); }}>
+      <div className="w-full max-w-sm rounded-3xl border border-emerald-400/30 bg-[#0a1311] p-6 text-center" onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20"><Lock className="h-7 w-7 text-emerald-400" /></div>
+        <h3 className="font-display text-3xl text-white">Fantasy Picks Locked</h3>
+        <div className="mt-4 space-y-1 rounded-xl bg-black/30 p-4 text-left text-sm">
+          <Row k="Slip ID" v={placed.code} mono /><Row k="Picks" v={placed.items.length} />
+          <Row k="Total Stake" v={money(placed.totalStake)} /><Row k="Potential Return" v={money(placed.potential)} hi />
+        </div>
+        <button onClick={() => { setPlaced(null); setOpen(false); setTab("fantasy"); }} className="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black">Done</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {slip.length > 0 && !open && (
+        <button onClick={() => setOpen(true)} className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-gradient-to-r from-amber-400 to-emerald-400 px-5 py-3 font-bold text-black shadow-2xl">
+          <Users className="h-4 w-4" /> Fantasy Slip · {slip.length} · {money(totalStake)}
+        </button>
+      )}
+      {open && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center" onClick={() => setOpen(false)}>
+          <div className="max-h-[88vh] w-full max-w-md overflow-hidden rounded-t-3xl border border-white/10 bg-[#0a1311] sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <h3 className="flex items-center gap-2 font-display text-2xl text-white"><Users className="h-5 w-5 text-amber-400" /> Fantasy Slip</h3>
+              <button onClick={() => setOpen(false)} className="rounded-lg bg-white/5 p-1.5"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="max-h-[46vh] space-y-2 overflow-y-auto p-4">
+              {slip.map((s) => (
+                <div key={s.selId} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0"><div className="text-[10px] uppercase tracking-wide text-emerald-400/70">{s.marketTitle}</div>
+                      <div className="text-sm font-semibold">{s.label}</div></div>
+                    <button onClick={() => remove(s.selId)} className="rounded p-1 text-stone-500 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="rounded-md bg-white/10 px-2 py-1 text-xs font-bold text-emerald-300">@ {s.oddsStr}</span>
+                    <div className="flex items-center gap-1.5"><span className="text-[11px] text-stone-500">Stake</span>
+                      <input type="number" value={s.stake} onChange={(e) => setStake(s.selId, e.target.value)} className="w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-right text-sm font-semibold outline-none focus:border-amber-400/60" /></div>
+                  </div>
+                  <div className="mt-1.5 text-right text-[11px] text-stone-500">Returns {money(s.stake * s.odds)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-white/10 bg-black/20 p-4">
+              <div className="mb-3 space-y-1 text-sm">
+                <Row k="Match wallet" v={money(available)} /><Row k="Total Stake" v={money(totalStake)} /><Row k="Potential Return" v={money(potential)} hi />
+              </div>
+              <button disabled={busy} onClick={place} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 font-bold text-black disabled:opacity-50"><Lock className="h-4 w-4" /> {busy ? "Submitting…" : "Submit Fantasy Picks"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ---------- My Picks + Wallet ---------- */
 function MyBets({ bets, wallet, nickname, txns }) {
   const [f, setF] = useState("all");
@@ -1567,7 +1759,7 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players
   const [pick, setPick] = useState(null);
   const totals = bets.reduce((a, b) => { a.stake += b.totalStake; if (b.status === "won") a.payout += b.payout || 0; return a; }, { stake: 0, payout: 0 });
@@ -1603,10 +1795,10 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         </button>
       </div>
 
-      <div className="mb-4 grid grid-cols-4 gap-2 rounded-xl bg-black/30 p-1">
-        {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["players", "Coins", Wallet]].map(([k, lbl, Icon]) => (
+      <div className="mb-4 grid grid-cols-5 gap-1.5 rounded-xl bg-black/30 p-1">
+        {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["fantasy", "Fantasy", Users], ["players", "Coins", Wallet]].map(([k, lbl, Icon]) => (
           <button key={k} onClick={() => switchMode(k)}
-            className={`flex items-center justify-center gap-1 rounded-lg py-2.5 text-[11px] font-semibold transition ${mode === k ? "bg-gradient-to-r from-amber-400 to-emerald-400 text-black" : "text-stone-400"}`}>
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[10px] font-semibold transition ${mode === k ? "bg-gradient-to-r from-amber-400 to-emerald-400 text-black" : "text-stone-400"}`}>
             <Icon className="h-4 w-4" /> {lbl}
           </button>
         ))}
@@ -1632,6 +1824,8 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         </>
       ) : mode === "outrights" ? (
         <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} txns={txns} saveConfig={saveConfig} settleOutright={settleOutright} resetOutright={resetOutright} showToast={showToast} />
+      ) : mode === "fantasy" ? (
+        <FantasyAdmin config={configs[-2]} results={results} bets={bets} saveConfig={saveConfig} settleFantasy={settleFantasy} resetFantasy={resetFantasy} showToast={showToast} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
       )}
@@ -1798,6 +1992,153 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
       <button onClick={saveOdds} disabled={busy} className="mt-4 w-full rounded-xl bg-white/10 py-3 font-bold text-emerald-300 disabled:opacity-50">
         {busy ? "Saving…" : "Save Outright Odds"}
       </button>
+    </div>
+  );
+}
+
+/* ---------- Admin: Fantasy Manager (managers, odds, settle) ---------- */
+function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetFantasy, showToast }) {
+  const [managers, setManagers] = useState(() => (config?.managers?.length ? config.managers : FM_DEFAULT_MANAGERS).map((m) => ({ ...m })));
+  const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
+  const [busy, setBusy] = useState(false);
+  const [openCat, setOpenCat] = useState(null);
+  const [confirm, setConfirm] = useState(null); // { mid, label }
+  const [winnerSel, setWinnerSel] = useState({}); // catKey -> selId chosen in dropdown
+
+  const fmBets = useMemo(() => (bets || []).filter((b) => b.kind === "fantasy"), [bets]);
+
+  const addManager = () => setManagers((m) => [...m, { id: "m_" + uid(), name: "" }]);
+  const setMgr = (i, name) => setManagers((m) => m.map((x, j) => j === i ? { ...x, name } : x));
+  const delMgr = (i) => setManagers((m) => m.filter((_, j) => j !== i));
+  const setOdd = (catKey, mgrId, val) => setOdds((o) => ({ ...o, [catKey]: { ...(o[catKey] || {}), [mgrId]: val } }));
+
+  const saveSetup = async () => {
+    const clean = managers.filter((m) => (m.name || "").trim()).map((m) => ({ id: m.id, name: m.name.trim() }));
+    setBusy(true);
+    try { await saveConfig(-2, { managers: clean, odds }); showToast("Fantasy managers & odds saved"); }
+    catch (e) { showToast(e.message || "Save failed", "err"); }
+    finally { setBusy(false); }
+  };
+  const doSettle = async (mid, selId) => {
+    if (!selId) { showToast("Pick the winning manager first", "err"); return; }
+    setBusy(true);
+    try { await settleFantasy(mid, selId); showToast("Matchday settled & paid out"); setConfirm(null); }
+    catch (e) { showToast(e.message || "Settle failed", "err"); }
+    finally { setBusy(false); }
+  };
+  const doReset = async (mid) => {
+    setBusy(true);
+    try { await resetFantasy(mid); showToast("Matchday reset — picks reopened"); setConfirm(null); }
+    catch (e) { showToast(e.message || "Reset failed", "err"); }
+    finally { setBusy(false); }
+  };
+
+  const liveManagers = managers.filter((m) => (m.name || "").trim());
+
+  return (
+    <div>
+      <SectionTitle icon={<Users className="h-5 w-5" />} title="Fantasy Manager" sub="Manage the manager list, set odds per matchday, and settle winners" />
+
+      <div className="mb-2 flex gap-2">
+        <button onClick={() => exportPicksCSV(fmBets, "SGA_WC2026_fantasy_picks.csv", true)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <BarChart3 className="h-3.5 w-3.5" /> Fantasy Picks (Excel)
+        </button>
+        <button onClick={() => printPicks(fmBets, "All Players — Fantasy Picks", true)}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+          <Receipt className="h-3.5 w-3.5" /> Fantasy Picks (PDF)
+        </button>
+      </div>
+
+      {/* Managers list */}
+      <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-sm font-bold">👔 Managers</div>
+          <button onClick={addManager} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">
+            <Plus className="h-3.5 w-3.5" /> Add Manager
+          </button>
+        </div>
+        <p className="mb-2 text-[11px] text-stone-500">Add or remove managers. Odds for each are set per matchday below.</p>
+        <div className="space-y-2">
+          {managers.map((m, i) => (
+            <div key={m.id} className="flex items-center gap-2">
+              <input value={m.name} onChange={(e) => setMgr(i, e.target.value)} placeholder="Manager name (e.g. Lionel Scaloni (Argentina))"
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
+              <button onClick={() => delMgr(i)} className="shrink-0 rounded-lg bg-white/5 p-2 text-stone-400 hover:text-rose-400"><X className="h-4 w-4" /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Odds per matchday */}
+      <div className="mb-2 text-sm font-bold">Odds per matchday</div>
+      <div className="space-y-2">
+        {FM_CATS.map((cat) => {
+          const open = openCat === cat.key;
+          return (
+            <div key={cat.key} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+              <button onClick={() => setOpenCat(open ? null : cat.key)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold">
+                <span>{cat.label} {results[cat.mid] && <span className="ml-1 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">SETTLED</span>}</span>
+                <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+              </button>
+              {open && (
+                <div className="border-t border-white/5 p-3">
+                  <div className="space-y-1.5">
+                    {liveManagers.map((m) => (
+                      <div key={m.id} className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-xs">{m.name}</span>
+                        <input value={odds[cat.key]?.[m.id] || ""} onChange={(e) => setOdd(cat.key, m.id, e.target.value)} placeholder="5/1"
+                          className="w-16 shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-center text-xs outline-none focus:border-emerald-400/50" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={saveSetup} disabled={busy} className="mt-3 w-full rounded-xl bg-white/10 py-3 font-bold text-emerald-300 disabled:opacity-50">
+        {busy ? "Saving…" : "Save Managers & Odds"}
+      </button>
+
+      {/* Settle per matchday */}
+      <div className="mt-6 mb-2 text-sm font-bold">Settle winners (pays out from match wallet)</div>
+      <div className="space-y-2">
+        {FM_CATS.map((cat) => {
+          const settled = results[cat.mid];
+          const settledName = settled ? (liveManagers.find((m) => `${cat.key}__${m.id}` === settled.fmWinner)?.name || "set") : null;
+          return (
+            <div key={cat.key} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-sm font-semibold">{cat.label}</span>
+                {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">Winner: {settledName}</span>}
+              </div>
+              {confirm?.mid === cat.mid ? (
+                <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3">
+                  <div className="mb-2 text-[12px] text-stone-200">{confirm.kind === "reset" ? "Reset this matchday and reopen its picks?" : `Settle ${cat.label}? Winning picks pay out from the match wallet.`}</div>
+                  <div className="flex gap-2">
+                    {confirm.kind === "reset"
+                      ? <button onClick={() => doReset(cat.mid)} disabled={busy} className="flex-1 rounded-lg bg-rose-500 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "…" : "Confirm Reset"}</button>
+                      : <button onClick={() => doSettle(cat.mid, winnerSel[cat.key])} disabled={busy} className="flex-1 rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 py-2 text-sm font-bold text-black disabled:opacity-50">{busy ? "…" : "Confirm & Pay Out"}</button>}
+                    <button onClick={() => setConfirm(null)} className="rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-stone-300">Back</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <select value={winnerSel[cat.key] ?? (settled?.fmWinner || "")} onChange={(e) => setWinnerSel((w) => ({ ...w, [cat.key]: e.target.value }))}
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50">
+                    <option value="">— winning manager —</option>
+                    {liveManagers.map((m) => <option key={m.id} value={`${cat.key}__${m.id}`}>{m.name}</option>)}
+                  </select>
+                  <button onClick={() => setConfirm({ mid: cat.mid })} className="shrink-0 rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 px-3 py-2 text-sm font-bold text-black">{settled ? "Re-settle" : "Settle"}</button>
+                  {settled && <button onClick={() => setConfirm({ mid: cat.mid, kind: "reset" })} className="shrink-0 rounded-lg bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-200">Reset</button>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -2284,10 +2625,11 @@ const Stat = ({ label, v, good }) => (
   </div>
 );
 
-function BottomNav({ tab, setTab, slipCount, ogCount }) {
+function BottomNav({ tab, setTab, slipCount, ogCount, fmCount }) {
   const items = [
     { k: "matches", label: "Matches", icon: Calendar },
     { k: "outrights", label: "Outrights", icon: Trophy, badge: ogCount },
+    { k: "fantasy", label: "Fantasy", icon: Users, badge: fmCount },
     { k: "mybets", label: "My Picks", icon: Receipt },
     { k: "board", label: "Ranking", icon: Crown },
   ];
