@@ -28,6 +28,13 @@ const OG_RUNNERUP = [["Spain","5/1"],["France","11/2"],["England","6/1"],["Brazi
 const OG_FINALISTS = [["France - Spain","12/1"],["France - England","14/1"],["France - Brazil","14/1"],["Spain - England","15/1"],["Spain - Brazil","16/1"],["England - Brazil","16/1"],["France - Argentina","16/1"],["Spain - Argentina","18/1"],["England - Argentina","18/1"],["Brazil - Argentina","18/1"],["France - Germany","20/1"],["Spain - Germany","22/1"],["England - Portugal","25/1"],["Brazil - Portugal","25/1"],["France - Netherlands","28/1"],["Argentina - Germany","33/1"],["Spain - Portugal","33/1"],["England - Netherlands","40/1"]];
 const OG_BOOT = [["Kylian Mbappe","9/2"],["Erling Haaland","11/2"],["Harry Kane","7/1"],["Vinicius Junior","8/1"],["Julian Alvarez","12/1"],["Lautaro Martinez","12/1"],["Lamine Yamal","14/1"],["Bukayo Saka","16/1"],["Olmo","18/1"],["Rasmus Hojlund","20/1"],["Cristiano Ronaldo","20/1"],["Memphis Depay","25/1"],["Romelu Lukaku","25/1"],["Cody Gakpo","28/1"],["Marcus Rashford","33/1"],["Gabriel Jesus","33/1"]];
 const OG_BALL = [["Kylian Mbappe","6/1"],["Jude Bellingham","7/1"],["Vinicius Junior","8/1"],["Lamine Yamal","8/1"],["Erling Haaland","10/1"],["Harry Kane","12/1"],["Rodri","12/1"],["Pedri","14/1"],["Lionel Messi","16/1"],["Federico Valverde","18/1"],["Phil Foden","20/1"],["Bruno Fernandes","20/1"],["Florian Wirtz","22/1"],["Bernardo Silva","25/1"],["Declan Rice","28/1"],["Antoine Griezmann","33/1"]];
+const OG_GLOVES = [["Emiliano Martinez","9/2"],["Alisson","5/1"],["Thibaut Courtois","11/2"],["Jordan Pickford","13/2"],["Mike Maignan","7/1"],["Unai Simon","9/1"],["Marc-Andre ter Stegen","10/1"],["Diogo Costa","12/1"],["Yann Sommer","16/1"],["Yassine Bounou","18/1"],["Andries Noppert","20/1"],["Guglielmo Vicario","22/1"]];
+const OG_EMERGING = [["Lamine Yamal","5/2"],["Endrick","5/1"],["Estevao Willian","8/1"],["Warren Zaire-Emery","9/1"],["Arda Guler","10/1"],["Kobbie Mainoo","12/1"],["Pau Cubarsi","14/1"],["Mathys Tel","16/1"],["Designe Doue","16/1"],["Kenan Yildiz","18/1"],["Joao Neves","20/1"],["Savinho","22/1"]];
+// totals: [line, Over odds, Under odds] — seeded for a 104-match 2026 tournament; adjust in the odds editor
+const OG_GOALS_LINES = [[260.5,"4/6","11/10"],[270.5,"10/11","10/11"],[280.5,"11/10","4/6"],[290.5,"6/4","1/2"]];
+const OG_OWNGOALS_LINES = [[8.5,"5/6","10/11"],[10.5,"11/10","4/6"],[12.5,"6/4","1/2"]];
+const OG_CARDS_LINES = [[320.5,"4/6","11/10"],[360.5,"10/11","10/11"],[400.5,"6/4","1/2"]];
+const OG_PENS_LINES = [[26.5,"4/6","11/10"],[32.5,"10/11","10/11"],[38.5,"6/4","1/2"]];
 
 function buildOutrightMarkets(cfg = {}) {
   const toSel = (key, pairs, otherLabel, otherOdds) => {
@@ -35,12 +42,27 @@ function buildOutrightMarkets(cfg = {}) {
     sels.push({ id: `${key}_other`, label: otherLabel, oddsStr: otherOdds, odds: toDecimal(otherOdds), meta: { og: key, other: true } });
     return sels;
   };
+  const toTotals = (key, noun, lines) => {
+    const sels = [];
+    lines.forEach(([line, ov, un]) => {
+      const tag = String(line).replace(".", "_");
+      sels.push({ id: `${key}_o${tag}`, label: `Over ${line} ${noun}`, oddsStr: ov, odds: toDecimal(ov), meta: { og: key, ou: "over", line } });
+      sels.push({ id: `${key}_u${tag}`, label: `Under ${line} ${noun}`, oddsStr: un, odds: toDecimal(un), meta: { og: key, ou: "under", line } });
+    });
+    return sels;
+  };
   const markets = [
-    { key: "og_champion", title: "Champion", icon: "🏆", mode: "multi", searchable: true, selections: toSel("og_champion", OG_CHAMPION, "Any other team", "100/1") },
-    { key: "og_runnerup", title: "Runner-Up", icon: "🥈", mode: "multi", searchable: true, selections: toSel("og_runnerup", OG_RUNNERUP, "Any other team", "100/1") },
-    { key: "og_finalists", title: "Finalists (both teams)", icon: "🎟️", mode: "multi", searchable: true, selections: toSel("og_finalists", OG_FINALISTS, "Any other combination", "100/1") },
-    { key: "og_boot", title: "Golden Boot (top scorer)", icon: "👟", mode: "multi", searchable: true, selections: toSel("og_boot", OG_BOOT, "Any other player", "100/1") },
-    { key: "og_ball", title: "Golden Ball (best player)", icon: "⭐", mode: "multi", searchable: true, selections: toSel("og_ball", OG_BALL, "Any other player", "100/1") },
+    { key: "og_champion", title: "Champion", icon: "🏆", mode: "multi", type: "winner", searchable: true, selections: toSel("og_champion", OG_CHAMPION, "Any other team", "100/1") },
+    { key: "og_runnerup", title: "Runner-Up", icon: "🥈", mode: "multi", type: "winner", searchable: true, selections: toSel("og_runnerup", OG_RUNNERUP, "Any other team", "100/1") },
+    { key: "og_finalists", title: "Finalists (both teams)", icon: "🎟️", mode: "multi", type: "winner", searchable: true, selections: toSel("og_finalists", OG_FINALISTS, "Any other combination", "100/1") },
+    { key: "og_boot", title: "Golden Boot (top scorer)", icon: "👟", mode: "multi", type: "winner", searchable: true, selections: toSel("og_boot", OG_BOOT, "Any other player", "100/1") },
+    { key: "og_ball", title: "Golden Ball (best player)", icon: "⭐", mode: "multi", type: "winner", searchable: true, selections: toSel("og_ball", OG_BALL, "Any other player", "100/1") },
+    { key: "og_gloves", title: "Golden Glove (best keeper)", icon: "🧤", mode: "multi", type: "winner", searchable: true, selections: toSel("og_gloves", OG_GLOVES, "Any other player", "66/1") },
+    { key: "og_emerging", title: "Best Emerging Player", icon: "🌟", mode: "multi", type: "winner", searchable: true, selections: toSel("og_emerging", OG_EMERGING, "Any other player", "50/1") },
+    { key: "og_goals", title: "Tournament's Goals", icon: "🔢", mode: "multi", type: "total", selections: toTotals("og_goals", "goals", OG_GOALS_LINES) },
+    { key: "og_owngoals", title: "Tournament's Own Goals", icon: "🥅", mode: "multi", type: "total", selections: toTotals("og_owngoals", "own goals", OG_OWNGOALS_LINES) },
+    { key: "og_cards", title: "Tournament's Cards", icon: "🟨", mode: "multi", type: "total", selections: toTotals("og_cards", "cards", OG_CARDS_LINES) },
+    { key: "og_pens", title: "Tournament's Penalties Awarded", icon: "🎯", mode: "multi", type: "total", selections: toTotals("og_pens", "penalties", OG_PENS_LINES) },
   ];
   if (cfg?.odds) for (const mk of markets) for (const s of mk.selections) {
     const o = cfg.odds[mk.key]?.[s.id];
@@ -48,6 +70,8 @@ function buildOutrightMarkets(cfg = {}) {
   }
   return markets;
 }
+const OG_WINNER_KEYS = ["og_champion", "og_runnerup", "og_finalists", "og_boot", "og_ball", "og_gloves", "og_emerging"];
+const OG_TOTAL_KEYS = ["og_goals", "og_owngoals", "og_cards", "og_pens"];
 const OUTRIGHT_MATCH = { n: -1, home: "Tournament", away: "Outrights" };
 
 // Predicted XI (10 outfield starters) per team — used for scorer player dropdowns
@@ -381,7 +405,7 @@ function evaluateItem(item, R) {
     }
     case "own_goal":
       return meta.og === "H" ? !!R.ownGoalH : !!R.ownGoalA;
-    case "og_champion": case "og_runnerup": case "og_finalists": case "og_boot": case "og_ball": {
+    case "og_champion": case "og_runnerup": case "og_finalists": case "og_boot": case "og_ball": case "og_gloves": case "og_emerging": {
       const win = R[marketKey];
       if (!win || item.selId !== win) return false;
       if (item.meta?.other) {
@@ -390,6 +414,12 @@ function evaluateItem(item, R) {
         return !!wn && wn === cn; // "Any other" pays only if the typed name matches the declared winner
       }
       return true;
+    }
+    case "og_goals": case "og_owngoals": case "og_cards": case "og_pens": {
+      const total = R[marketKey + "_total"];
+      if (total === undefined || total === null || total === "") return false; // not settled yet
+      const t = Number(total), line = Number(item.meta?.line);
+      return item.meta?.ou === "over" ? t > line : t < line; // .5 lines → no push
     }
     default:
       return false;
@@ -1682,6 +1712,15 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
         <div className="mb-2 text-sm font-bold">Declare winners (settles & pays out)</div>
         <div className="space-y-2">
           {markets.map((mk) => {
+            if (mk.type === "total") {
+              return (
+                <div key={mk.key}>
+                  <span className="mb-1 block text-xs text-stone-400">{mk.icon} {mk.title}</span>
+                  <input type="number" value={winners[`${mk.key}_total`] ?? ""} onChange={(e) => setWinners((w) => ({ ...w, [`${mk.key}_total`]: e.target.value }))}
+                    placeholder={`Actual total ${mk.title.replace("Tournament's ", "").toLowerCase()} (leave blank = not settled)`} className={ipt} />
+                </div>
+              );
+            }
             const isOther = winners[mk.key] === `${mk.key}_other`;
             return (
             <div key={mk.key}>
@@ -1716,7 +1755,7 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
             </div>
           );})}
         </div>
-        <p className="mt-2 text-[11px] text-stone-500">For “Any other”, type the real winner — players who chose “Any other” pay out only if their typed name matches.</p>
+        <p className="mt-2 text-[11px] text-stone-500">For “Any other”, type the real winner — players who chose “Any other” pay out only if their typed name matches. For totals, enter the actual count (e.g. total goals) — Over/Under settle automatically.</p>
         {!confirm ? (
           <div className="mt-3 space-y-2">
             <button onClick={() => setConfirm("settle")} disabled={busy} className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
