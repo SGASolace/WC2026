@@ -128,11 +128,11 @@ const money = (n) => `${Math.round(n).toLocaleString()} Coins`;
 //   ≥ 20,000           → 20%
 //   < 10,000           → 0%
 function bonusPct(amount) {
-  if (amount >= 20000) return 20;
-  if (amount >= 15000) return 15;
-  if (amount > 10000) return 12;
-  if (amount === 10000) return 10;
-  return 0;
+  const a = Number(amount) || 0;
+  if (a <= 5000) return 0;     // up to 5,000 → no bonus
+  if (a <= 15000) return 10;   // 5,001–15,000 → 10%
+  if (a <= 25000) return 15;   // 15,001–25,000 → 15%
+  return 20;                   // 25,001 & above → 20%
 }
 // deposit + bonus credited by admin; every stake leaves the balance; won picks return their payout.
 function walletCalc(deposit, bonus, myBets) {
@@ -1339,7 +1339,6 @@ function Outrights({ config, wallet, slip, setSlip, now, ogBets = [], nickname }
       <SectionTitle icon={<Trophy className="h-5 w-5" />} title="Outrights" sub="Tournament-long picks · separate Coins wallet" />
       <div className="mb-3 grid grid-cols-3 gap-2">
         <Stat label="Deposit" v={money(wallet.deposit)} />
-        <Stat label="Bonus" v={money(wallet.bonus)} good />
         <Stat label="In Bets" v={money(wallet.inBets)} />
         <Stat label="Won" v={money(wallet.won)} good />
         <Stat label="Lost" v={money(wallet.lost)} />
@@ -2171,10 +2170,10 @@ function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, reset
     <div>
       <SectionTitle icon={<Wallet className="h-5 w-5" />} title="Players & Coins" sub="Credit each wallet — bonus is added automatically by deposit tier" />
       <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-[11px] text-stone-400 sm:grid-cols-4">
-        <div><span className="font-bold text-emerald-300">10%</span> · exactly 10,000</div>
-        <div><span className="font-bold text-emerald-300">12%</span> · 10,001–14,999</div>
-        <div><span className="font-bold text-emerald-300">15%</span> · 15,000–19,999</div>
-        <div><span className="font-bold text-emerald-300">20%</span> · 20,000 and above</div>
+        <div><span className="font-bold text-stone-300">No bonus</span> · up to 5,000</div>
+        <div><span className="font-bold text-emerald-300">10%</span> · 5,001–15,000</div>
+        <div><span className="font-bold text-emerald-300">15%</span> · 15,001–25,000</div>
+        <div><span className="font-bold text-emerald-300">20%</span> · 25,001 &amp; above</div>
       </div>
       {list.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No players have signed up yet.</p>}
       <div className="space-y-2.5">
@@ -2208,11 +2207,11 @@ function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, reset
   );
 }
 
-function CreditBlock({ title, color, wallet, onCredit, onExtract, showToast }) {
+function CreditBlock({ title, color, wallet, onCredit, onExtract, showToast, bonusEnabled = true }) {
   const [amt, setAmt] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const a = Math.max(0, parseFloat(amt) || 0), bonus = a * bonusPct(a) / 100;
+  const a = Math.max(0, parseFloat(amt) || 0), pct = bonusEnabled ? bonusPct(a) : 0, bonus = a * pct / 100;
   const run = async (fn, label) => {
     if (a <= 0) { showToast("Enter an amount", "err"); return; }
     setBusy(true);
@@ -2229,8 +2228,9 @@ function CreditBlock({ title, color, wallet, onCredit, onExtract, showToast }) {
         <span className={`font-semibold ${color}`}>{title}</span>
         <span className="text-stone-400">Net <b className={wallet.net >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(wallet.net)}</b></span>
       </div>
-      <div className="mb-2 grid grid-cols-5 gap-1.5 text-center text-[10px]">
-        {[["Dep", wallet.deposit], ["Bonus", wallet.bonus], ["In", wallet.inBets], ["Won", wallet.won], ["Lost", wallet.lost]].map(([k, v]) => (
+      <div className={`mb-2 grid gap-1.5 text-center text-[10px] ${bonusEnabled ? "grid-cols-5" : "grid-cols-4"}`}>
+        {(bonusEnabled ? [["Dep", wallet.deposit], ["Bonus", wallet.bonus], ["In", wallet.inBets], ["Won", wallet.won], ["Lost", wallet.lost]]
+                       : [["Dep", wallet.deposit], ["In", wallet.inBets], ["Won", wallet.won], ["Lost", wallet.lost]]).map(([k, v]) => (
           <div key={k} className="rounded-lg bg-black/20 px-1 py-1.5"><div className="text-stone-500">{k}</div><div className="font-semibold text-white">{fmtN(v)}</div></div>
         ))}
       </div>
@@ -2245,7 +2245,7 @@ function CreditBlock({ title, color, wallet, onCredit, onExtract, showToast }) {
         <button onClick={credit} disabled={busy} className="flex-1 rounded-lg bg-gradient-to-r from-amber-400 to-emerald-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-50">{busy ? "…" : "Add / Credit"}</button>
         <button onClick={extract} disabled={busy} className="flex-1 rounded-lg bg-rose-500/20 px-3 py-2 text-sm font-bold text-rose-200 hover:bg-rose-500/30 disabled:opacity-50">Extract Coin</button>
       </div>
-      {a > 0 && <p className="mt-1 text-[11px] text-stone-400">Add credits <span className="text-emerald-300">+{money(a + bonus)}</span>{bonusPct(a) ? ` (incl. ${bonusPct(a)}% bonus +${money(bonus)})` : " (no bonus under 10,000)"} · Extract removes <span className="text-rose-300">−{money(a)}</span></p>}
+      {a > 0 && <p className="mt-1 text-[11px] text-stone-400">Add credits <span className="text-emerald-300">+{money(a + bonus)}</span>{!bonusEnabled ? " (no bonus on this wallet)" : pct ? ` (incl. ${pct}% bonus +${money(bonus)})` : " (no bonus up to 5,000)"} · Extract removes <span className="text-rose-300">−{money(a)}</span></p>}
     </div>
   );
 }
@@ -2265,7 +2265,7 @@ function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerO
 
       <div className="my-3 border-t border-white/5" />
 
-      <CreditBlock title="🏆 Outright wallet" color="text-amber-300" wallet={og} showToast={showToast}
+      <CreditBlock title="🏆 Outright wallet" color="text-amber-300" wallet={og} showToast={showToast} bonusEnabled={false}
         onCredit={(a, b, note) => creditPlayerOg(p, a, b, note).then(() => showToast(`Outright +${money(a + b)} (${note}) → ${p.nickname}`))}
         onExtract={(a, note) => creditPlayerOg(p, -a, 0, note).then(() => showToast(`Outright −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
 
