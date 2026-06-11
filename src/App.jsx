@@ -889,8 +889,8 @@ export default function App() {
           {role === "player" && (
             <>
               <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} myBets={myMatchBets} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
-              {tab === "outrights" && <OutrightSlip slip={ogSlip} setSlip={setOgSlip} user={user} placeBet={placeBet} available={ogWallet.net} now={now} showToast={showToast} setTab={setTab} />}
-              {tab === "fantasy" && <FantasySlip slip={fmSlip} setSlip={setFmSlip} user={user} placeBet={placeBet} available={wallet.net} showToast={showToast} setTab={setTab} />}
+              {tab === "outrights" && <OutrightSlip slip={ogSlip} setSlip={setOgSlip} user={user} placeBet={placeBet} available={ogWallet.net} myBets={myOgBets} now={now} showToast={showToast} setTab={setTab} />}
+              {tab === "fantasy" && <FantasySlip slip={fmSlip} setSlip={setFmSlip} user={user} placeBet={placeBet} available={wallet.net} myBets={myFantasyBets} showToast={showToast} setTab={setTab} />}
               <BottomNav tab={tab} setTab={(t) => { setTab(t); setActiveMatch(null); }} slipCount={slip.length} ogCount={ogSlip.length} fmCount={fmSlip.length} />
             </>
           )}
@@ -1530,7 +1530,7 @@ function Outrights({ config, wallet, slip, setSlip, now, ogBets = [], nickname }
 }
 
 /* ---------- Outright slip ---------- */
-function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast, setTab }) {
+function OutrightSlip({ slip, setSlip, user, placeBet, available, myBets = [], now, showToast, setTab }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [placed, setPlaced] = useState(null);
@@ -1553,7 +1553,19 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, now, showToast
     for (const s of slip) {
       if (s.stake < OUTRIGHT_RULES.min) return `Min stake is ${money(OUTRIGHT_RULES.min)} per pick`;
       if (s.stake > OUTRIGHT_RULES.max) return `Max stake is ${money(OUTRIGHT_RULES.max)} per pick`;
-      if (s.meta?.other && !(s.customName || "").trim()) return "Type the name for your “Any other” pick";
+      if (s.meta?.other && !(s.customName || "").trim()) return "Pick the team/player for your “Any other” pick";
+    }
+    // cap: total stake per category (this slip + already-submitted) must not exceed the max
+    const submitted = {};
+    (myBets || []).forEach((b) => b.items.forEach((it) => { submitted[it.marketKey] = (submitted[it.marketKey] || 0) + it.stake; }));
+    const current = {};
+    slip.forEach((s) => { current[s.marketKey] = (current[s.marketKey] || 0) + s.stake; });
+    for (const k of Object.keys(current)) {
+      const total = current[k] + (submitted[k] || 0);
+      if (total > OUTRIGHT_RULES.max) {
+        const s = slip.find((x) => x.marketKey === k);
+        return `${s.marketTitle}: total stake across your picks is ${money(total)} — max is ${money(OUTRIGHT_RULES.max)} per category`;
+      }
     }
     if (totalStake > available) return `Not enough outright Coins — you have ${money(available)}. Ask the admin to add more.`;
     return null;
@@ -1716,7 +1728,7 @@ function Fantasy({ config, wallet, results, slip, setSlip, fmBets = [], nickname
   );
 }
 
-function FantasySlip({ slip, setSlip, user, placeBet, available, showToast, setTab }) {
+function FantasySlip({ slip, setSlip, user, placeBet, available, myBets = [], showToast, setTab }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [placed, setPlaced] = useState(null);
@@ -1730,6 +1742,18 @@ function FantasySlip({ slip, setSlip, user, placeBet, available, showToast, setT
     for (const s of slip) {
       if (s.stake < FANTASY_RULES.min) return `Min stake is ${money(FANTASY_RULES.min)} per pick`;
       if (s.stake > FANTASY_RULES.max) return `Max stake is ${money(FANTASY_RULES.max)} per pick`;
+    }
+    // cap: total stake per matchday (this slip + already-submitted) must not exceed the max
+    const submitted = {};
+    (myBets || []).forEach((b) => b.items.forEach((it) => { submitted[it.marketKey] = (submitted[it.marketKey] || 0) + it.stake; }));
+    const current = {};
+    slip.forEach((s) => { current[s.marketKey] = (current[s.marketKey] || 0) + s.stake; });
+    for (const k of Object.keys(current)) {
+      const total = current[k] + (submitted[k] || 0);
+      if (total > FANTASY_RULES.max) {
+        const s = slip.find((x) => x.marketKey === k);
+        return `${s.marketTitle}: total stake across your picks is ${money(total)} — max is ${money(FANTASY_RULES.max)} per matchday`;
+      }
     }
     if (totalStake > available) return `Not enough match Coins — you have ${money(available)}.`;
     return null;
