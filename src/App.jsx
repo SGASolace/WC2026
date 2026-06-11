@@ -132,12 +132,11 @@ const toDecimal = (frac) => {
 const money = (n) => `${Math.round(n).toLocaleString()} Coins`;
 
 /* ---------- wallet accounting ---------- */
-// Bonus tiers applied to each deposit amount:
-//   = 10,000           → 10%
-//   > 10,000 & < 15,000 → 12%
-//   ≥ 15,000 & < 20,000 → 15%
-//   ≥ 20,000           → 20%
-//   < 10,000           → 0%
+// Bonus tiers applied to the Match-wallet deposit amount (Outright wallet gets no bonus):
+//   up to 5,000        → 0%
+//   5,001 – 15,000     → 10%
+//   15,001 – 25,000    → 15%
+//   25,001 & above     → 20%
 function bonusPct(amount) {
   const a = Number(amount) || 0;
   if (a <= 5000) return 0;     // up to 5,000 → no bonus
@@ -145,15 +144,19 @@ function bonusPct(amount) {
   if (a <= 25000) return 15;   // 15,001–25,000 → 15%
   return 20;                   // 25,001 & above → 20%
 }
-// deposit + bonus credited by admin; every stake leaves the balance; won picks return their payout.
+// deposit + bonus credited by admin; every stake leaves the balance; won selections return their payout.
+// Won/Lost are tallied per selection (singles), so a slip with both winning and losing legs
+// reports each correctly. Net is unaffected: net = deposit + bonus − (all staked) + (winning returns).
 function walletCalc(deposit, bonus, myBets) {
   deposit = Number(deposit || 0); bonus = Number(bonus || 0);
   let inBets = 0, won = 0, lost = 0, staked = 0;
   (myBets || []).forEach((b) => {
     staked += b.totalStake;
-    if (b.status === "open") inBets += b.totalStake;
-    else if (b.status === "won") won += b.payout || 0;
-    else if (b.status === "lost") lost += b.totalStake;
+    if (b.status === "open") { inBets += b.totalStake; return; }
+    (b.items || []).forEach((it) => {
+      if (it.status === "won") won += it.stake * it.odds;       // full return on winning selections
+      else if (it.status === "lost") lost += it.stake;          // stake lost on losing selections
+    });
   });
   return { deposit, bonus, inBets, won, lost, net: deposit + bonus - staked + won };
 }
