@@ -1555,16 +1555,19 @@ function OutrightSlip({ slip, setSlip, user, placeBet, available, myBets = [], n
       if (s.stake > OUTRIGHT_RULES.max) return `Max stake is ${money(OUTRIGHT_RULES.max)} per pick`;
       if (s.meta?.other && !(s.customName || "").trim()) return "Pick the team/player for your “Any other” pick";
     }
-    // cap: total stake per category (this slip + already-submitted) must not exceed the max
+    // cap: total stake on each specific outcome (selection, or the typed name for "Any other")
+    // across this slip + already-submitted picks must not exceed the max
+    const okey = (it) => it.selId + "|" + (it.meta?.other ? (it.customName || "").trim().toLowerCase() : "");
     const submitted = {};
-    (myBets || []).forEach((b) => b.items.forEach((it) => { submitted[it.marketKey] = (submitted[it.marketKey] || 0) + it.stake; }));
+    (myBets || []).forEach((b) => b.items.forEach((it) => { const k = okey(it); submitted[k] = (submitted[k] || 0) + it.stake; }));
     const current = {};
-    slip.forEach((s) => { current[s.marketKey] = (current[s.marketKey] || 0) + s.stake; });
+    slip.forEach((s) => { const k = okey(s); current[k] = (current[k] || 0) + s.stake; });
     for (const k of Object.keys(current)) {
       const total = current[k] + (submitted[k] || 0);
       if (total > OUTRIGHT_RULES.max) {
-        const s = slip.find((x) => x.marketKey === k);
-        return `${s.marketTitle}: total stake across your picks is ${money(total)} — max is ${money(OUTRIGHT_RULES.max)} per category`;
+        const s = slip.find((x) => okey(x) === k);
+        const outcome = (s.meta?.other && s.customName) ? s.customName : s.label;
+        return `${s.marketTitle} · ${outcome}: total stake across your picks is ${money(total)} — max is ${money(OUTRIGHT_RULES.max)} per selection`;
       }
     }
     if (totalStake > available) return `Not enough outright Coins — you have ${money(available)}. Ask the admin to add more.`;
@@ -1743,16 +1746,17 @@ function FantasySlip({ slip, setSlip, user, placeBet, available, myBets = [], sh
       if (s.stake < FANTASY_RULES.min) return `Min stake is ${money(FANTASY_RULES.min)} per pick`;
       if (s.stake > FANTASY_RULES.max) return `Max stake is ${money(FANTASY_RULES.max)} per pick`;
     }
-    // cap: total stake per matchday (this slip + already-submitted) must not exceed the max
+    // cap: total stake on each specific outcome (a manager in a matchday) across this slip
+    // + already-submitted picks must not exceed the max
     const submitted = {};
-    (myBets || []).forEach((b) => b.items.forEach((it) => { submitted[it.marketKey] = (submitted[it.marketKey] || 0) + it.stake; }));
+    (myBets || []).forEach((b) => b.items.forEach((it) => { submitted[it.selId] = (submitted[it.selId] || 0) + it.stake; }));
     const current = {};
-    slip.forEach((s) => { current[s.marketKey] = (current[s.marketKey] || 0) + s.stake; });
+    slip.forEach((s) => { current[s.selId] = (current[s.selId] || 0) + s.stake; });
     for (const k of Object.keys(current)) {
       const total = current[k] + (submitted[k] || 0);
       if (total > FANTASY_RULES.max) {
-        const s = slip.find((x) => x.marketKey === k);
-        return `${s.marketTitle}: total stake across your picks is ${money(total)} — max is ${money(FANTASY_RULES.max)} per matchday`;
+        const s = slip.find((x) => x.selId === k);
+        return `${s.marketTitle} · ${s.label}: total stake across your picks is ${money(total)} — max is ${money(FANTASY_RULES.max)} per selection`;
       }
     }
     if (totalStake > available) return `Not enough match Coins — you have ${money(available)}.`;
