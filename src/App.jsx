@@ -2937,6 +2937,17 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         </div>
       );})}
 
+      <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/5 p-3">
+        <div className="mb-1 text-sm font-bold">⚽ “Other Player” odds (catch-all)</div>
+        <p className="mb-2 text-[11px] text-stone-400">Applies when a scorer isn't listed above — shown to players as the “Other Player” option in First &amp; Anytime Scorer.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="mb-1 block text-[11px] text-stone-500">First Scorer — Other</span>
+            <input value={odds.first_scorer?.fo ?? "12/1"} onChange={(e) => setOdd("first_scorer", "fo", e.target.value)} className={ipt + " text-center"} /></label>
+          <label className="block"><span className="mb-1 block text-[11px] text-stone-500">Anytime Scorer — Other</span>
+            <input value={odds.anytime_scorer?.ao ?? "8/1"} onChange={(e) => setOdd("anytime_scorer", "ao", e.target.value)} className={ipt + " text-center"} /></label>
+        </div>
+      </div>
+
       <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
         <div className="mb-1 flex items-center justify-between">
           <div className="text-sm font-bold">✨ Custom Match Specials</div>
