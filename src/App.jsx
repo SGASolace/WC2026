@@ -545,7 +545,7 @@ function exportPicksCSV(bets, filename, byPlayer) {
       let sub = 0, subStake = 0;
       byMatch[mid].forEach(({ it, b }) => {
         const pl = itemPL(b, it); sub += pl; subStake += it.stake;
-        lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, it.label, it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
+        lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, it.label + (it.customName ? ` — ${it.customName}` : ""), it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
       });
       lines.push(["", matchName(+mid), "", "", "", Math.round(subStake), "", "", "SUBTOTAL", Math.round(sub)].map(esc).join(","));
       playerTotal += sub; playerStake += subStake;
@@ -588,7 +588,7 @@ function picksHTML(bets, title, byPlayer) {
       let sub = 0, subStake = 0;
       byMatch[mid].forEach(({ it, b }) => {
         const pl = itemPL(b, it); sub += pl; subStake += it.stake;
-        body += `<tr><td>${it.marketTitle}</td><td>${it.label}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(pl)}</tr>`;
+        body += `<tr><td>${it.marketTitle}</td><td>${it.label}${it.customName ? ` — ${it.customName}` : ""}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(pl)}</tr>`;
       });
       body += `<tr class="sub"><td colspan="3">Match subtotal</td><td>${fmtN(subStake)}</td><td></td>${plCell(sub)}</tr></tbody></table>`;
       playerTotal += sub; playerStake += subStake;
@@ -1942,7 +1942,7 @@ function BetCard({ b }) {
             <div key={it.selId + it.matchId} className="flex items-center justify-between text-xs">
               <div className="min-w-0">
                 <span className="text-stone-500">{it.marketTitle}: </span>
-                <span className="font-medium">{it.label}</span>
+                <span className="font-medium">{it.label}{it.customName ? ` — ${it.customName}` : ""}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className="text-emerald-300">@{it.oddsStr}</span>
