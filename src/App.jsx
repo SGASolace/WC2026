@@ -536,24 +536,24 @@ function exportPicksCSV(bets, filename, byPlayer) {
   const groups = {};
   if (byPlayer) bets.forEach((b) => (groups[b.user] ||= []).push(b));
   else groups._ = bets;
-  let grand = 0;
+  let grand = 0, grandStake = 0;
   Object.entries(groups).forEach(([player, pbets]) => {
     const byMatch = {};
     pbets.forEach((b) => b.items.forEach((it) => (byMatch[it.matchId] ||= []).push({ it, b })));
-    let playerTotal = 0;
+    let playerTotal = 0, playerStake = 0;
     Object.keys(byMatch).sort((a, b) => a - b).forEach((mid) => {
-      let sub = 0;
+      let sub = 0, subStake = 0;
       byMatch[mid].forEach(({ it, b }) => {
-        const pl = itemPL(b, it); sub += pl;
+        const pl = itemPL(b, it); sub += pl; subStake += it.stake;
         lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, it.label, it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
       });
-      lines.push(["", matchName(+mid), "", "", "", "", "", "", "SUBTOTAL", Math.round(sub)].map(esc).join(","));
-      playerTotal += sub;
+      lines.push(["", matchName(+mid), "", "", "", Math.round(subStake), "", "", "SUBTOTAL", Math.round(sub)].map(esc).join(","));
+      playerTotal += sub; playerStake += subStake;
     });
-    if (byPlayer) lines.push([player, "", "", "", "", "", "", "", "PLAYER TOTAL", Math.round(playerTotal)].map(esc).join(","));
-    grand += playerTotal;
+    if (byPlayer) lines.push([player, "", "", "", "", Math.round(playerStake), "", "", "PLAYER TOTAL", Math.round(playerTotal)].map(esc).join(","));
+    grand += playerTotal; grandStake += playerStake;
   });
-  lines.push(["", "", "", "", "", "", "", "", "TOTAL (ALL MATCHES)", Math.round(grand)].map(esc).join(","));
+  lines.push(["", "", "", "", "", Math.round(grandStake), "", "", "TOTAL (ALL MATCHES)", Math.round(grand)].map(esc).join(","));
   downloadFile(filename, "\ufeff" + lines.join("\n"), "text/csv;charset=utf-8");
 }
 
@@ -575,28 +575,28 @@ function picksHTML(bets, title, byPlayer) {
   if (byPlayer) bets.forEach((b) => (groups[b.user] ||= []).push(b));
   else groups._ = bets;
   const plCell = (n) => `<td class="pl ${n >= 0 ? "pos" : "neg"}">${signed(n)}</td>`;
-  let body = "", grand = 0;
+  let body = "", grand = 0, grandStake = 0;
   Object.entries(groups).forEach(([player, pbets]) => {
     if (byPlayer) body += `<h2>${player}</h2>`;
     const byMatch = {};
     pbets.forEach((b) => b.items.forEach((it) => (byMatch[it.matchId] ||= []).push({ it, b })));
     const ids = Object.keys(byMatch).sort((a, b) => a - b);
     if (!ids.length) { body += `<p class="empty">No picks.</p>`; return; }
-    let playerTotal = 0;
+    let playerTotal = 0, playerStake = 0;
     ids.forEach((mid) => {
       body += `<h3>${matchName(+mid)}</h3><table><thead><tr><th>Category</th><th>Selection</th><th>Odds</th><th>Stake</th><th>Result</th><th>Coins +/−</th></tr></thead><tbody>`;
-      let sub = 0;
+      let sub = 0, subStake = 0;
       byMatch[mid].forEach(({ it, b }) => {
-        const pl = itemPL(b, it); sub += pl;
+        const pl = itemPL(b, it); sub += pl; subStake += it.stake;
         body += `<tr><td>${it.marketTitle}</td><td>${it.label}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(pl)}</tr>`;
       });
-      body += `<tr class="sub"><td colspan="5">Match subtotal</td>${plCell(sub)}</tr></tbody></table>`;
-      playerTotal += sub;
+      body += `<tr class="sub"><td colspan="3">Match subtotal</td><td>${fmtN(subStake)}</td><td></td>${plCell(sub)}</tr></tbody></table>`;
+      playerTotal += sub; playerStake += subStake;
     });
-    if (byPlayer) body += `<table><tbody><tr class="tot"><td colspan="5">${player} — total (all matches)</td>${plCell(playerTotal)}</tr></tbody></table>`;
-    grand += playerTotal;
+    if (byPlayer) body += `<table><tbody><tr class="tot"><td colspan="3">${player} — total (all matches)</td><td>${fmtN(playerStake)}</td><td></td>${plCell(playerTotal)}</tr></tbody></table>`;
+    grand += playerTotal; grandStake += playerStake;
   });
-  body += `<table><tbody><tr class="grand"><td colspan="5">TOTAL — all matches</td>${plCell(grand)}</tr></tbody></table>`;
+  body += `<table><tbody><tr class="grand"><td colspan="3">TOTAL — all matches</td><td>${fmtN(grandStake)}</td><td></td>${plCell(grand)}</tr></tbody></table>`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
     body{font-family:Arial,Helvetica,sans-serif;color:#13211c;padding:22px;max-width:860px;margin:auto}
     h1{font-size:19px;margin:0 0 3px;color:#0b3d2e}
