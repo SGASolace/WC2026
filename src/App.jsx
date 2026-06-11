@@ -2010,38 +2010,58 @@ function Leaderboard({ bets, me }) {
 function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players
   const [pick, setPick] = useState(null);
-  const totals = bets.reduce((a, b) => { a.stake += b.totalStake; if (b.status === "won") a.payout += b.payout || 0; return a; }, { stake: 0, payout: 0 });
   const switchMode = (m) => { setMode(m); setPick(null); };
+
+  // ----- per-tab summary stats -----
+  const nPlayers = players.filter((p) => !p.is_admin).length;
+  const agg = (arr) => arr.reduce((a, b) => { a.n++; a.stake += b.totalStake; if (b.status === "won") a.payout += b.payout || 0; if (b.status === "open") a.open += b.totalStake; return a; }, { n: 0, stake: 0, payout: 0, open: 0 });
+  const m = agg(bets.filter((b) => (b.kind || "match") === "match"));
+  const f = agg(bets.filter((b) => b.kind === "fantasy"));
+  const o = agg(bets.filter((b) => b.kind === "outright"));
+  const all = agg(bets);
+  const settledMatches = Object.keys(results).filter((k) => +k > 0).length;
+  const settledFmMd = Object.keys(results).filter((k) => +k <= -11 && +k >= -19).length;
+  const liveMatches = FIXTURES.filter((mm) => configs?.[mm.n]?.live).length;
+  const totalDeposit = players.reduce((a, p) => a + Number(p.deposit || 0) + Number(p.og_deposit || 0), 0);
+  const totalBonus = players.reduce((a, p) => a + Number(p.bonus || 0) + Number(p.og_bonus || 0), 0);
+  const pl = (x) => x.stake - x.payout;
+  const STAT = {
+    settle: [["Players", nPlayers], ["Match Entries", m.n], ["Match Stakes", money(m.stake)], ["Match Payouts", money(m.payout), true], ["Settled Matches", `${settledMatches}/72`], ["Match Pool P/L", money(pl(m)), pl(m) >= 0]],
+    manage: [["Players", nPlayers], ["Live Matches", `${liveMatches}/72`], ["Draft (not live)", `${72 - liveMatches}/72`], ["Settled Matches", `${settledMatches}/72`]],
+    outrights: [["Players", nPlayers], ["Outright Entries", o.n], ["Outright Stakes", money(o.stake)], ["Outright Payouts", money(o.payout), true], ["Winners Declared", results[-1] ? "Yes" : "No"], ["Outright Pool P/L", money(pl(o)), pl(o) >= 0]],
+    fantasy: [["Players", nPlayers], ["Fantasy Entries", f.n], ["Fantasy Stakes", money(f.stake)], ["Fantasy Payouts", money(f.payout), true], ["Settled Matchdays", `${settledFmMd}/9`], ["Fantasy Pool P/L", money(pl(f)), pl(f) >= 0]],
+    players: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Settled Matches", `${settledMatches}/72`], ["Settled Fantasy MDs", `${settledFmMd}/9`], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
+  };
+  const stats = STAT[mode] || STAT.settle;
+  const showMatchExport = mode === "settle" || mode === "manage";
+  const showTxnExport = mode === "players";
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Players" v={players.filter((p) => !p.is_admin).length} />
-        <Stat label="Total Entries" v={bets.length} />
-        <Stat label="Total Stakes" v={money(totals.stake)} />
-        <Stat label="Total Payouts" v={money(totals.payout)} good />
-      </div>
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        <Stat label="Settled Matches" v={Object.keys(results).filter((k) => +k > 0).length} />
-        <Stat label="Pool P/L" v={money(totals.stake - totals.payout)} good={totals.stake - totals.payout >= 0} />
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {stats.map(([label, v, good]) => <Stat key={label} label={label} v={v} good={good} />)}
       </div>
 
-      <div className="mb-2 flex gap-2">
-        <button onClick={() => exportPicksCSV(bets.filter((b) => b.kind !== "outright"), "SGA_WC2026_match_picks.csv", true)}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-          <BarChart3 className="h-3.5 w-3.5" /> Match Picks (Excel)
-        </button>
-        <button onClick={() => printPicks(bets.filter((b) => b.kind !== "outright"), "All Players — Match Picks", true)}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
-          <Receipt className="h-3.5 w-3.5" /> Match Picks (PDF)
-        </button>
-      </div>
-      <div className="mb-4">
-        <button onClick={() => exportTransactionsCSV(txns, "SGA_WC2026_all_transactions.csv")}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-white/10">
-          <Wallet className="h-3.5 w-3.5" /> Export All Transactions (Excel)
-        </button>
-      </div>
+      {showMatchExport && (
+        <div className="mb-4 flex gap-2">
+          <button onClick={() => exportPicksCSV(bets.filter((b) => b.kind !== "outright"), "SGA_WC2026_match_picks.csv", true)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+            <BarChart3 className="h-3.5 w-3.5" /> Match Picks (Excel)
+          </button>
+          <button onClick={() => printPicks(bets.filter((b) => b.kind !== "outright"), "All Players — Match Picks", true)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10">
+            <Receipt className="h-3.5 w-3.5" /> Match Picks (PDF)
+          </button>
+        </div>
+      )}
+      {showTxnExport && (
+        <div className="mb-4">
+          <button onClick={() => exportTransactionsCSV(txns, "SGA_WC2026_all_transactions.csv")}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-white/10">
+            <Wallet className="h-3.5 w-3.5" /> Export All Transactions (Excel)
+          </button>
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-5 gap-1.5 rounded-xl bg-black/30 p-1">
         {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["fantasy", "Fantasy", Users], ["players", "Coins", Wallet]].map(([k, lbl, Icon]) => (
