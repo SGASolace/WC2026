@@ -2954,7 +2954,7 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
                   </select>
                   {custom && <input value={p.name} onChange={(e) => setPlayer(side, i, "name", e.target.value)} placeholder="Type player name" className={ipt + " mt-1"} />}
                 </div>
-                <select value={p.pos || ""} onChange={(e) => setPlayer(side, i, "pos", e.target.value)} className={ipt + " px-1 text-center"}>
+                <select value={p.pos || POS_BY_NAME[(p.name || "").trim().toLowerCase()] || ""} onChange={(e) => setPlayer(side, i, "pos", e.target.value)} className={ipt + " px-1 text-center"}>
                   <option value="">—</option><option value="GK">GK</option><option value="DF">DF</option><option value="MD">MD</option><option value="FWD">FWD</option>
                 </select>
                 <input value={p.first} onChange={(e) => setPlayer(side, i, "first", e.target.value)} placeholder="5/1" className={ipt + " text-center"} />
