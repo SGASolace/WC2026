@@ -300,15 +300,19 @@ function defaultPlayers(team, side) {
   return base.map(([role, f, a]) => ({ name: `${team} · ${role}`, first: f, any: a }));
 }
 
+// player → position (GK/DF/MD/FWD) from the predicted-XI list; admin can override per match
+const POS_BY_NAME = {"aaron hickey":"MD","aaron tshibola":"MD","aaron wan-bissaka":"DF","abbosbek fayzullaev":"MD","abdallah al-fakhouri":"GK","abdallah nasib":"DF","abde ezzalzouli":"FWD","abdoulaye seck":"DF","abdukodir khusanov":"DF","abdul fatawu":"MD","abdul mumin":"DF","abdul rahman baba":"DF","abdulaziz hatem":"MD","abdulelah al-amri":"DF","abdulkerim bardakci":"DF","abdulla abdullaev":"DF","abdullah al-hamdan":"FWD","abdullah al-khaibari":"MD","abduvohid nematov":"GK","achraf hakimi":"DF","achref abada":"DF","adalberto carrasquilla":"MD","adam hlozek":"FWD","adem arous":"DF","adil boulbina":"FWD","adrien rabiot":"MD","agustin canobbio":"MD","ahmed abou el fotouh":"DF","ahmed al-ganehi":"FWD","ahmed al-kasser":"GK","ahmed alaaeldin":"FWD","ahmed basil":"GK","ahmed fathy":"MD","ahmed maknzi":"DF","ahmed qasem":"FWD","ahmed reda tagnaouti":"GK","aiden o'neill":"MD","aimar sher":"MD","aissa mandi":"DF","ajdin hrustic":"MD","akam hashim":"DF","akram afif":"FWD","al-hashmi al-hussain":"DF","alan franco":"MD","alan minda":"MD","alban lafont":"GK","alberto quintero":"MD","alejandro zendejas":"FWD","aleksandar pavlovic":"MD","alessandro circati":"DF","alessandro schopf":"MD","alex arce":"FWD","alex baena":"MD","alex freeman":"DF","alex grimaldo":"DF","alex paulsen":"GK","alex rufer":"MD","alex sandro":"DF","alexander bernhardsson":"FWD","alexander isak":"FWD","alexander nubel":"GK","alexander prass":"DF","alexander schlager":"GK","alexander sorloth":"FWD","alexandr sojka":"MD","alexandre pierre":"GK","alexandro maidana":"DF","alexis mac allister":"MD","alexis saelemaekers":"MD","alexis vega":"FWD","alfie jones":"DF","ali abdi":"DF","ali ahmed":"MD","ali al-hamadi":"FWD","ali alipour":"FWD","ali azaizeh":"FWD","ali jasim":"FWD","ali lajami":"DF","ali majrashi":"DF","ali nemati":"DF","ali olwan":"FWD","ali yousuf":"FWD","alidu seidu":"DF","alireza beiranvand":"GK","alireza jahanbakhsh":"MD","alisson":"GK","alistair johnston":"DF","alla al-heiji":"MD","almoez ali":"FWD","alphonso davies":"DF","altay bayindir":"GK","alvaro fidalgo":"MD","alvaro montero":"GK","amad diallo":"FWD","amadou onana":"MD","amar dedic":"DF","amar memic":"MD","amer jamous":"MD","amine gouiri":"FWD","amir al-ammari":"MD","amir hadziahmetovic":"MD","amirhossein hosseinzadeh":"FWD","amirmohammad rassaghinia":"MD","anas badawi":"DF","anass salah-eddine":"DF","andreas schjelderup":"MD","andrej kramaric":"FWD","andres andrade":"DF","andres cubas":"MD","andy robertson":"MD","ange-yoan bonny":"FWD","angelo preciado":"DF","angelo stiller":"MD","angus gunn":"GK","anibal godoy":"MD","anis ben slimane":"MD","anis hadj moussa":"FWD","ante budimir":"FWD","anthony elanga":"FWD","anthony gordon":"FWD","anthony ralston":"DF","anthony valencia":"FWD","antoine mendy":"DF","antoine semenyo":"MD","antonee robinson":"DF","antonio nusa":"FWD","antonio rudiger":"DF","antonio sanabria":"FWD","ao tanaka":"MD","ar'jany martha":"MD","arda guler":"FWD","ardon jashari":"MD","aria yousefi":"DF","armando gonzalez":"FWD","armando obispo":"DF","armin gigovic":"MD","arthur masuaku":"DF","arthur theate":"DF","assan ouedraogo":"MD","assane diao":"FWD","assim madibo":"MD","aubrey modiba":"DF","augustine boakye":"MD","aurele amenda":"DF","aurelien tchouameni":"MD","auston trusty":"DF","avazbek ulmasaliev":"DF","awer mabil":"FWD","axel tuanzebe":"DF","axel witsel":"MD","ayase ueda":"FWD","ayman yahya":"FWD","aymen dahmen":"GK","aymen hussein":"FWD","aymeric laporte":"DF","ayoub al-oui":"DF","ayoub el kaabi":"FWD","ayoube amaimouni":"FWD","ayumu seko":"DF","ayyoub bouaddi":"MD","azarias londono":"FWD","aziz behich":"DF","azizbek amonov":"FWD","azizjon ganiev":"MD","azzedine ounahi":"MD","bae jun-ho":"MD","bamba dieng":"FWD","bara ndiaye":"MD","baris alper yilmaz":"FWD","bart verbruggen":"GK","bazoumana toure":"FWD","bekhruz karimov":"DF","ben gannon-doak":"MD","ben old":"FWD","ben waine":"FWD","benjamin asare":"GK","benjamin nygren":"FWD","benjamin tahirovic":"MD","bernardo silva":"FWD","besfort zeneli":"MD","bilal el khannouss":"MD","borja iglesias":"FWD","botirali ergashev":"GK","boualem khoukhi":"DF","bradley barcola":"FWD","bradley cross":"DF","brahim diaz":"FWD","braian ojeda":"MD","brandley kuwas":"FWD","brandon mechele":"DF","brandon thomas-asante":"FWD","breel embolo":"FWD","bremer":"DF","brenden aaronson":"FWD","brian brobbey":"FWD","brian cipenga":"FWD","brian gutierrez":"MD","brian rodriguez":"FWD","brice samba":"GK","bruno fernandes":"MD","bruno guimaraes":"MD","bukayo saka":"MD","caglar soyuncu":"DF","caleb yirenkyi":"MD","callan elliot":"DF","callum mccowatt":"FWD","cameron burgess":"DF","cameron devlin":"MD","camilo vargas":"GK","can uzun":"FWD","carl sainte":"MD","carl starfelt":"DF","carlens arcus":"DF","carlos acevedo":"GK","carlos andres gomez":"FWD","carlos harvey":"DF","carney chukwuemeka":"MD","casemiro":"MD","cecilio waterman":"FWD","cedric bakambu":"FWD","cedric itten":"FWD","cesar blackman":"DF","cesar huerta":"FWD","cesar montes":"DF","cesar samudio":"GK","cesar yanis":"MD","chadi riad":"DF","chancel mbemba":"DF","charles de ketelaere":"FWD","charles pickel":"MD","che adams":"FWD","chemsdine talbi":"FWD","cherif ndiaye":"FWD","cho gue-sung":"FWD","cho wi-je":"DF","chris brady":"GK","chris richards":"DF","chris wood":"FWD","christ inao oulai":"MD","christian fassnacht":"MD","christian pulisic":"FWD","christopher bonsu baah":"FWD","christopher operi":"DF","cj dos santos":"GK","cody gakpo":"FWD","connor metcalfe":"MD","craig gordon":"GK","cristian martinez":"MD","cristian roldan":"MD","cristian romero":"DF","cristian volpato":"FWD","cristiano ronaldo":"FWD","crysencio summerville":"FWD","cucho hernandez":"FWD","cyle larin":"FWD","daichi kamada":"MD","dailon livramento":"FWD","daizen maeda":"FWD","damian bobadilla":"MD","dan burn":"DF","dan ndoye":"MD","dani olmo":"MD","danial eiri":"DF","daniel munoz":"DF","daniel svensson":"DF","danilo luiz":"DF","danilo santos":"MD","danley jean jacques":"MD","darwin nunez":"FWD","david affengruber":"DF","david alaba":"DF","david doudera":"DF","david jurasek":"DF","david moller wolfe":"DF","david ospina":"GK","david raum":"DF","david raya":"GK","david zima":"DF","davinson sanchez":"DF","dayne st. clair":"GK","dayot upamecano":"DF","dean henderson":"GK","declan rice":"MD","deiver machado":"DF","denil castillo":"MD","denis visinsky":"MD","denis zakaria":"MD","deniz gul":"FWD","deniz undav":"FWD","dennis eckert":"FWD","dennis hadzikadunic":"DF","denzel dumfries":"DF","derek cornelius":"DF","deroy duarte":"MD","derrick etienne jr.":"FWD","derrick luckassen":"DF","desire doue":"FWD","deveron fonville":"DF","diego gomez":"MD","diego moreira":"MD","diney":"DF","diogo costa":"GK","diogo dalot":"DF","djed spence":"DF","djibril sow":"MD","dodi lukebakio":"FWD","dominic hyam":"DF","dominik kotarski":"GK","dominik livakovic":"GK","dominique simon":"MD","donyell malen":"FWD","dostonbek khamdamov":"MD","douglas santos":"DF","duckens nazon":"FWD","duje caleta-car":"DF","duke lacroix":"DF","dylan batubinsika":"DF","dylan bronn":"DF","dzenis burnic":"MD","eberechi eze":"MD","ederson":"GK","edgardo farina":"DF","edin dzeko":"FWD","edmilson junior":"FWD","edo kayembe":"MD","edouard mendy":"GK","edson alvarez":"MD","egil selvik":"GK","ehsan hajsafi":"DF","el hadji malick diouf":"DF","el mahdy soliman":"GK","eldor shomurodov":"FWD","eli just":"FWD","elias achouri":"FWD","elias saad":"FWD","elisha owusu":"MD","elliot anderson":"MD","elliot stroud":"DF","ellyes skhiri":"MD","eloy room":"GK","elye wahi":"FWD","emam ashour":"MD","emiliano martinez":"MD","emmanuel agbadou":"DF","endrick":"FWD","enner valencia":"FWD","enzo fernandez":"MD","eom ji-sung":"MD","eray comert":"DF","eren elmali":"DF","eric davis":"DF","eric garcia":"DF","eric smith":"DF","erling haaland":"FWD","ermedin demirovic":"FWD","ermin mahmic":"MD","ernest nuamah":"FWD","esmir bajraktarevic":"FWD","evan ndicka":"DF","evann guessand":"FWD","evidence makgopa":"FWD","exequiel palacios":"MD","ezri konsa":"DF","fabian balbuena":"DF","fabian rieder":"MD","fabian ruiz":"MD","fabinho":"MD","facundo medina":"DF","facundo pellistri":"FWD","fahad talib":"GK","fares chaibi":"MD","fares ghedjemis":"FWD","farrukh sayfiev":"DF","federico valverde":"MD","federico vinas":"FWD","felix nmecha":"MD","felix torres":"DF","ferdi kadioglu":"DF","fernando muslera":"GK","ferran torres":"FWD","fidel escobar":"DF","findlay curtis":"MD","finn surman":"DF","firas al-buraikan":"FWD","firas chaouat":"FWD","fiston mayele":"FWD","florian grillitsch":"MD","florian wiegele":"GK","florian wirtz":"MD","folarin balogun":"FWD","francis de vries":"DF","francisco conceicao":"FWD","francisco trincao":"MD","franck kessie":"MD","frans putros":"DF","frantzdy pierrot":"FWD","fredrik andre bjorkan":"DF","fredrik aursnes":"MD","frenkie de jong":"MD","gabriel avalos":"FWD","gabriel gudmundsson":"DF","gabriel magalhaes":"DF","gabriel martinelli":"FWD","gael kakuta":"FWD","garry rodrigues":"FWD","gaston olveira":"GK","gatito fernandez":"GK","gavi":"MD","gedeon kalulu":"DF","george hirst":"FWD","geronimo rulli":"GK","gervane kastaneer":"FWD","gessime yassine":"FWD","ghislain konan":"DF","gideon mensah":"DF","gilberto mora":"MD","gilson benchimol":"FWD","giorgian de arrascaeta":"FWD","giovani lo celso":"MD","giovanni reyna":"MD","giuliano simeone":"FWD","godfried roemeratoe":"MD","goncalo guedes":"FWD","goncalo inacio":"DF","goncalo ramos":"FWD","gonzalo montiel":"DF","gonzalo plata":"FWD","gonzalo valle":"GK","granit xhaka":"MD","grant hanley":"DF","gregor kobel":"GK","guela doue":"DF","guillermo martinez":"FWD","guillermo ochoa":"GK","guillermo varela":"DF","gustaf lagerbielke":"DF","gustaf nilsson":"FWD","gustavo caballero":"FWD","gustavo gomez":"DF","gustavo puerta":"MD","gustavo velazquez":"DF","guus til":"MD","habib diarra":"MD","hadj mahmoud":"MD","haissem hassan":"FWD","haji wright":"FWD","hakan calhanoglu":"MD","hamdy fathy":"MD","hamza abdelkarim":"FWD","hannes delcroix":"DF","hannibal mejbri":"MD","hans vanaken":"MD","haris tabakovic":"FWD","harry kane":"FWD","harry souttar":"DF","hassan al-haydos":"FWD","hassan al-tambakti":"DF","hassan kadesh":"DF","hazem mastouri":"FWD","helio varela":"FWD","henrik falchener":"DF","herman johansson":"DF","hernan galindez":"GK","hicham boudaoui":"MD","hiroki ito":"DF","hjalmar ekdal":"DF","homam ahmed":"DF","hossam abdelmaguid":"DF","hossein hosseini":"GK","hossein kanaanizadegan":"DF","houssem aouar":"MD","hugo sochurek":"MD","husam abu dahab":"DF","hussein ali":"DF","hwang hee-chan":"MD","hwang in-beom":"MD","ibrahim adel":"FWD","ibrahim bayesh":"MD","ibrahim maza":"MD","ibrahim mbaye":"FWD","ibrahim sabra":"FWD","ibrahim sadeh":"MD","ibrahim sangare":"MD","ibrahima konate":"DF","idrissa gueye":"MD","igor matanovic":"FWD","igor sergeev":"FWD","igor thiago":"FWD","ihsan haddad":"DF","iliman ndiaye":"FWD","ime okon":"DF","inaki williams":"FWD","iqraam rayners":"FWD","irfan can kahveci":"FWD","isak hien":"DF","isidro pitta":"FWD","ismael diaz":"MD","ismael gharbi":"MD","ismael kone":"MD","ismael saibari":"MD","ismail jakobs":"DF","ismail yuksek":"MD","ismaila sarr":"FWD","israel reyes":"DF","issa diop":"DF","issa laye":"DF","ivan basic":"MD","ivan perisic":"FWD","ivan sunjic":"MD","ivan toney":"FWD","ivor pandur":"GK","jack hendry":"DF","jackson irvine":"MD","jackson porozo":"DF","jacob italiano":"DF","jacob shaffelburg":"FWD","jacob widell zetterstrom":"GK","jakhongir urozov":"DF","jalal hassan":"GK","jaloliddin masharipov":"MD","jamal musiala":"MD","james rodriguez":"FWD","james trafford":"GK","jamie leweling":"MD","jaminton campaz":"MD","jamiro monteiro":"MD","jamshid iskanderov":"MD","jan kuchta":"FWD","jan paul van hecke":"DF","jaouen hadjam":"DF","jarell quansah":"DF","jaroslav zeleny":"DF","jason geria":"DF","jassem gaber":"MD","jayden adams":"MD","jean michael seri":"MD","jean-kevin duverne":"DF","jean-philippe mateta":"FWD","jean-ricner bellegarde":"MD","jearl margaritha":"FWD","jefferson lerma":"MD","jehad thakri":"DF","jens castrop":"DF","jens petter hauge":"MD","jeremy antonisse":"FWD","jeremy arevalo":"FWD","jeremy doku":"FWD","jerome opoku":"DF","jesper karlstrom":"MD","jesse randall":"FWD","jesus gallardo":"DF","jhon arias":"MD","jhon cordoba":"FWD","jhon lucumi":"DF","jindrich stanek":"GK","jiovany ramos":"DF","jo hyeon-woo":"GK","joan garcia":"GK","joao cancelo":"DF","joao felix":"FWD","joao neves":"MD","joao paulo":"MD","joaquin piquerez":"MD","joaquin seys":"DF","joe bell":"MD","joe scally":"DF","joel ordonez":"DF","joel waterman":"DF","johan manzambi":"MD","johan mojica":"DF","johan vasquez":"DF","john mcginn":"MD","john souttar":"DF","john stones":"DF","john yeboah":"MD","johny placide":"GK","jonas adjetey":"DF","jonathan david":"FWD","jonathan osorio":"MD","jonathan tah":"DF","jordan ayew":"FWD","jordan bos":"DF","jordan henderson":"MD","jordan pickford":"GK","jordy alcivar":"MD","jordy caicedo":"FWD","jorge carrascal":"MD","jorge gutierrez":"DF","jorge sanchez":"DF","jorgen strand larsen":"FWD","joris kayembe":"DF","jorrel hato":"DF","jose canale":"DF","jose cordoba":"DF","jose fajardo":"FWD","jose luis rodriguez":"MD","jose manuel lopez":"FWD","jose maria gimenez":"DF","jose sa":"GK","joseph anang":"GK","joshua brenet":"DF","joshua kimmich":"DF","josip stanisic":"DF","josip sutalo":"DF","josko gvardiol":"DF","josue casimir":"FWD","josue duverger":"GK","jovane cabral":"FWD","jovo lukic":"FWD","juan caceres":"DF","juan camilo portilla":"MD","juan fernando quintero":"MD","juan manuel sanabria":"MD","juan musso":"GK","jude bellingham":"MD","jules kounde":"DF","julian alvarez":"FWD","julian quinones":"FWD","julian ryerson":"DF","julio enciso":"FWD","juninho bacuna":"FWD","junior alonso":"DF","junnosuke suzuki":"DF","junya ito":"MD","jurgen locadia":"FWD","jurien gaari":"DF","jurrien timber":"DF","justin kluivert":"MD","kaan ayhan":"MD","kai havertz":"FWD","kai trewin":"DF","kaishu sano":"MD","kaku":"FWD","kalidou koulibaly":"DF","kamaldeen sulemana":"MD","kamogelo sebelebele":"FWD","karim boudiaf":"MD","karim hafez":"DF","keeto thermoncy":"DF","keisuke goto":"FWD","keisuke osako":"GK","keito nakamura":"MD","kelvin pires":"DF","ken sema":"FWD","kenan yildiz":"FWD","kendry paez":"MD","kenji gorre":"FWD","kenny mclean":"MD","kento shiogai":"FWD","kerem akturkoglu":"FWD","kerim alajbegovic":"FWD","kevin castano":"MD","kevin danso":"DF","kevin de bruyne":"MD","kevin felida":"MD","kevin pina":"MD","kevin rodriguez":"FWD","kevin yakob":"FWD","khalid al-ghannam":"MD","khalil ayari":"FWD","khojiakbar alijonov":"DF","khuliso mudau":"DF","khulumani ndamane":"DF","kieran tierney":"DF","kim jin-gyu":"MD","kim min-jae":"DF","kim moon-hwan":"DF","kim seung-gyu":"GK","kim tae-hyeon":"DF","ko itakura":"DF","kobbie mainoo":"MD","kojo peprah oppong":"DF","koki ogawa":"FWD","koni de winter":"DF","konrad laimer":"MD","kosta barbarouses":"FWD","krepin diatta":"DF","kristian thorstvedt":"MD","kristijan jakic":"DF","kristoffer ajer":"DF","kristoffer nordfeldt":"GK","kwasi sibo":"MD","kylian mbappe":"FWD","lachlan bayliss":"MD","ladislav krejci":"DF","lamine camara":"MD","lamine yamal":"FWD","laros duarte":"MD","lautaro martinez":"FWD","lawrence ati-zigi":"GK","lawrence shankland":"FWD","leandro bacuna":"MD","leandro paredes":"MD","leandro trossard":"FWD","lee dong-gyeong":"MD","lee han-beom":"DF","lee jae-sung":"MD","lee kang-in":"MD","lee ki-hyuk":"MD","lee tae-seok":"DF","lenny joseph":"FWD","leo ostigard":"DF","leo pereira":"DF","leon goretzka":"MD","leonardo balerdi":"DF","leroy sane":"MD","leverton pierre":"MD","lewis ferguson":"MD","liam kelly":"GK","liam millar":"MD","liberato cacace":"DF","lionel messi":"FWD","lionel mpasi":"GK","lisandro martinez":"DF","livano comenencia":"MD","logan costa":"DF","louicius deedson":"FWD","luc de fougerolles":"DF","luca jaquez":"DF","luca zidane":"GK","lucas bergvall":"MD","lucas digne":"DF","lucas hernandez":"DF","lucas herrington":"DF","lucas mendes":"DF","lucas paqueta":"MD","luis chavez":"MD","luis diaz":"FWD","luis mejia":"GK","luis romo":"MD","luis suarez":"FWD","luiz henrique":"FWD","luka modric":"MD","luka sucic":"MD","luka vuskovic":"DF","lukas cerv":"MD","lukas hornicek":"GK","lukas provod":"MD","lyle foster":"FWD","lyndon dykes":"FWD","maghnes akliouche":"FWD","mahmoud abunada":"GK","mahmoud al-mardi":"FWD","mahmoud saber":"MD","malick thiaw":"DF","malik tillman":"MD","malo gusto":"DF","mamadou sarr":"DF","manaf younis":"DF","manu kone":"MD","manuel akanji":"DF","manuel neuer":"GK","manuel ugarte":"MD","marc cucurella":"DF","marc guehi":"DF","marc pubill":"DF","marcel sabitzer":"MD","marcio rosa":"GK","marco friedl":"DF","marco pasalic":"FWD","marcos llorente":"DF","marcus holmgren pedersen":"DF","marcus rashford":"FWD","marcus thuram":"FWD","marin pongracic":"DF","mario pasalic":"MD","mark flekken":"GK","mark mckenzie":"DF","marko arnautovic":"FWD","marko farji":"FWD","marko stamenic":"MD","marquinhos":"DF","marten de roon":"MD","martin baturina":"MD","martin erlic":"DF","martin experience":"DF","martin odegaard":"MD","martin zlomislic":"GK","martin zubimendi":"MD","marvin keller":"GK","marvin senaya":"DF","marwan attia":"MD","matej kovar":"GK","mateo chavez":"DF","mateo kovacic":"MD","matheus cunha":"FWD","matheus nunes":"MD","mathew leckie":"FWD","mathew ryan":"GK","mathias olivera":"DF","mathieu choiniere":"MD","matias fernandez-pardo":"FWD","matias galarza":"MD","matias vina":"DF","mats wieffer":"DF","matt freese":"GK","matt garbett":"MD","matt turner":"GK","matthieu epolo":"GK","mattias svanberg":"MD","mauricio":"MD","max arfsten":"DF","max crocombe":"GK","maxence lacroix":"DF","maxim de cuyper":"DF","maxime crepeau":"GK","maximilian beier":"FWD","maximiliano araujo":"MD","mbekezeli mbokazi":"DF","mehdi ghayedi":"FWD","mehdi taremi":"FWD","mehdi torabi":"MD","melvin mastil":"GK","memphis depay":"FWD","merchas doski":"DF","merih demiral":"DF","mert gunok":"GK","mert muldur":"DF","meschak elia":"MD","meshaal barsham":"GK","michael amir murillo":"DF","michael boxall":"DF","michael gregoritsch":"FWD","michael olise":"FWD","michael svoboda":"DF","michael woud":"GK","michal sadilek":"MD","michel aebischer":"MD","micky van de ven":"DF","miguel almiron":"MD","mike maignan":"GK","mike penders":"GK","mikel merino":"MD","mikel oyarzabal":"FWD","milad mohammadi":"DF","miles robinson":"DF","milos degenek":"DF","miro muheim":"DF","mladen jurkas":"GK","mohamed abdelmonem":"DF","mohamed al-mannai":"MD","mohamed alaa":"GK","mohamed amine ben hamida":"DF","mohamed amine tougai":"DF","mohamed amoura":"FWD","mohamed el shenawy":"GK","mohamed hany":"DF","mohamed kanno":"MD","mohamed kone":"GK","mohamed salah":"FWD","mohamed toure":"FWD","mohammad abu hashish":"DF","mohammad abu zrayq":"FWD","mohammad abualnadi":"DF","mohammad al-dawoud":"MD","mohammad ghorbani":"MD","mohammad mohebi":"FWD","mohammed abu al-shamat":"DF","mohammed al-owais":"GK","mohammed muntari":"FWD","mohanad ali":"FWD","mohanad lasheen":"MD","mohannad abu taha":"MD","moise bombito":"DF","moises caicedo":"MD","moises ramirez":"GK","mojmir chytil":"FWD","montassar talbi":"DF","morgan rogers":"MD","mortadha ben ouanes":"DF","morten thorsby":"MD","mory diaw":"GK","mostafa shobeir":"GK","mostafa ziko":"MD","moteb al-harbi":"DF","mouhib chamakh":"GK","moussa niakhate":"DF","moutaz neffati":"DF","munir mohamedi":"GK","musa al-taamari":"FWD","musab al-juwayr":"MD","mustafa saadoon":"DF","n'golo kante":"MD","nabil bentaleb":"MD","nabil emad":"MD","nadhir benbouali":"FWD","nadiem amiri":"MD","nahuel molina":"DF","nando pijnaker":"DF","nasser al-dawsari":"MD","nathan ake":"DF","nathan ngoy":"DF","nathan patterson":"DF","nathan saliba":"MD","nathanael mbuku":"MD","nathaniel brown":"DF","nawaf al-aqidi":"GK","nawaf boushal":"DF","nayef aguerd":"DF","neil el aynaoui":"MD","nelson semedo":"DF","nestory irankunda":"FWD","neymar":"FWD","ngal'ayel mukau":"MD","nick woltemade":"FWD","nico elvedi":"DF","nico o'reilly":"DF","nico paz":"FWD","nico schlotterbeck":"DF","nico williams":"FWD","nicolas de la cruz":"MD","nicolas gonzalez":"FWD","nicolas jackson":"FWD","nicolas otamendi":"DF","nicolas pepe":"FWD","nicolas raskin":"MD","nicolas seiwald":"MD","nicolas tagliafico":"DF","nidal celik":"DF","nihad mujakic":"DF","niko sigur":"DF","nikola katic":"DF","nikola moro":"MD","nikola vasilj":"GK","nikola vlasic":"MD","nilson angulo":"FWD","nishan velupillay":"FWD","nizar al-rashdan":"MD","nkosinathi sibisi":"DF","noa lang":"FWD","noah okafor":"FWD","noah sadiki":"MD","noni madueke":"FWD","noor al-rawabdeh":"MD","nour bani attiah":"GK","noussair mazraoui":"DF","nuno da costa":"MD","nuno mendes":"DF","obed vargas":"MD","odeh al-fakhouri":"FWD","odiljon hamrobekov":"MD","odilon kossounou":"DF","oguz aydin":"FWD","oh hyeon-gyu":"FWD","oliver baumann":"GK","ollie watkins":"FWD","olwethu makhanya":"DF","omar alderete":"DF","omar marmoush":"FWD","omar rekik":"DF","orbelin pineda":"MD","orjan nyland":"GK","orkun kokcu":"MD","orlando gill":"GK","orlando mosquera":"GK","oscar bobb":"MD","oston urunov":"MD","oswin appollis":"FWD","otabek shukurov":"MD","oumar diakite":"FWD","ousmane dembele":"FWD","ousmane diomande":"DF","oussama benbot":"GK","owen goodman":"GK","ozan kabak":"DF","paik seung-ho":"MD","pape gueye":"MD","pape matar sarr":"MD","parfait guiagon":"MD","park jin-seob":"DF","pascal gross":"MD","pathe ciss":"MD","patrick beach":"GK","patrick berg":"MD","patrick pentz":"GK","patrick wimmer":"MD","patrik schick":"FWD","pau cubarsi":"DF","paul izzo":"GK","paul okon-engstler":"MD","paul wanner":"MD","pavel sulc":"FWD","payam niazmand":"GK","pedri":"MD","pedro miguel":"DF","pedro neto":"FWD","pedro porro":"DF","pedro vite":"MD","pervis estupinan":"DF","petar musa":"FWD","petar sucic":"MD","philipp lienhart":"DF","philipp mwene":"DF","piero hincapie":"DF","prince kwabena adu":"FWD","promise david":"FWD","quinten timber":"MD","raed chikhaoui":"DF","rafael leao":"FWD","rafik belghali":"DF","rajaei ayed":"MD","ramin rezaeian":"DF","ramiz zerrouki":"MD","ramon sosa":"MD","ramy bensebaini":"DF","ramy rabia":"DF","rani khedira":"MD","raphinha":"FWD","raul jimenez":"FWD","raul rangel":"GK","rayan":"FWD","rayan ait-nouri":"DF","rayan cherki":"FWD","rayan elloumi":"FWD","rebin sulaka":"DF","redouane halhal":"DF","reece james":"DF","relebohile mofokeng":"FWD","remo freuler":"MD","renato veiga":"DF","ricardo ade":"DF","ricardo goss":"GK","ricardo pepi":"FWD","ricardo rodriguez":"DF","richard rios":"MD","richie laryea":"DF","riechedly bazoer":"DF","ritsu doan":"MD","riyad mahrez":"FWD","roberto alvarado":"MD","roberto lopes":"DF","robin hranac":"DF","robin risser":"GK","robin roefs":"GK","roderick miller":"DF","rodri":"MD","rodrigo aguirre":"FWD","rodrigo bentancur":"MD","rodrigo de paul":"MD","rodrigo zalazar":"MD","roger ibanez":"DF","romano schmid":"MD","romelu lukaku":"FWD","ronald araujo":"DF","ronwen williams":"GK","roshon van eijma":"DF","ross stewart":"FWD","rouzbeh cheshmi":"MD","ruben dias":"DF","ruben neves":"MD","ruben providence":"FWD","ruben vargas":"FWD","rui silva":"GK","rustam ashurmatov":"DF","ryan christie":"MD","ryan gravenberch":"MD","ryan mendes":"FWD","ryan thomas":"MD","sabri ben hessen":"GK","sadio mane":"FWD","saed al-rosan":"DF","saeid ezatolahi":"MD","salah zakaria":"GK","saleh al-shehri":"FWD","saleh hardani":"DF","salem al-dawsari":"FWD","salih ozcan":"MD","salim obaid":"DF","saman ghoddos":"MD","samed bazdar":"FWD","samet akaydin":"DF","samir chergui":"DF","samir el mourabet":"MD","samu costa":"MD","samuel moutoussamy":"MD","samukele kabini":"DF","sander berge":"MD","sander tangvik":"GK","santiago arias":"DF","santiago bueno":"DF","santiago gimenez":"FWD","santiago mele":"GK","sarpreet singh":"FWD","sasa kalajdzic":"FWD","saud abdulhamid":"DF","scott mckenna":"DF","scott mctominay":"MD","sead kolasinac":"DF","sebastian berhalter":"MD","sebastian caceres":"DF","sebastian tounekti":"FWD","seko fofana":"MD","senne lammens":"GK","seol young-woo":"DF","sergino dest":"DF","sergio rochet":"GK","shahriyar moghanlou":"FWD","sherel floranus":"DF","sherzod esanov":"MD","sherzod nasrullaev":"DF","shogo taniguchi":"DF","shojae khalilzadeh":"DF","shurandy sambo":"DF","sidny lopes cabral":"DF","silvan widmer":"DF","simon adingra":"FWD","simon banza":"FWD","sipho chaine":"GK","sofyan amrabat":"MD","son heung-min":"FWD","sondre langas":"DF","song bum-keun":"GK","sontje hansen":"FWD","soufiane rahimi":"FWD","sphephelo sithole":"MD","stefan posch":"DF","stepan chaloupek":"DF","stephen eustaquio":"MD","steve kapuadi":"DF","steven moreira":"DF","stjepan radeljic":"DF","stopira":"DF","sultan al-brake":"DF","sultan mandash":"FWD","taha ali":"FWD","tahith chong":"FWD","tahsin jamshid":"FWD","tajon buchanan":"FWD","takefusa kubo":"MD","takehiro tomiyasu":"DF","tani oluwaseyi":"FWD","tarek alaa":"DF","tarik muharemovic":"DF","teboho mokoena":"MD","telmo arcanjo":"MD","tete yengi":"FWD","teun koopmeiners":"MD","thabang matuludi":"DF","thalente mbatha":"MD","thapelo maseko":"FWD","thelo aasgaard":"MD","themba zwane":"FWD","theo bongonda":"MD","theo hernandez":"DF","thiago almada":"FWD","thibaut courtois":"GK","thomas meunier":"DF","thomas partey":"MD","tijjani reijnders":"MD","tim payne":"DF","tim ream":"DF","timothy castagne":"DF","timothy fayulu":"GK","timothy weah":"FWD","tino livramento":"DF","tomas araujo":"DF","tomas chory":"FWD","tomas holes":"DF","tomas rodriguez":"FWD","tomas soucek":"MD","tommy smith":"DF","tomoki hayakawa":"GK","toni fruk":"MD","torbjorn heggem":"DF","trevor doornbusch":"GK","trezeguet":"FWD","tsuyoshi watanabe":"DF","tyler adams":"MD","tyler bindon":"DF","tyler fletcher":"MD","tyrese noslin":"MD","tyrick bodak":"GK","ugurcan cakir":"GK","umar eshmurodov":"DF","unai simon":"GK","utkir yusupov":"GK","valentin barco":"MD","victor lindelof":"DF","victor munoz":"FWD","viktor gyokeres":"FWD","viktor johansson":"GK","vinicius junior":"FWD","virgil van dijk":"DF","vitinha":"MD","vladimir coufal":"DF","vladimir darida":"MD","vozinha":"GK","wagner pina":"DF","waldemar anton":"DF","warren zaire-emery":"MD","wataru endo":"MD","wesley":"DF","weston mckennie":"MD","weverton":"GK","wilfried singo":"DF","wilguens paugain":"DF","willer ditta":"DF","william saliba":"DF","willian pacho":"DF","willy semedo":"FWD","wilson isidor":"FWD","woodensky pierre":"MD","wout weghorst":"FWD","xaver schlager":"MD","yacine titraoui":"MD","yahia fofana":"GK","yaimar medina":"MD","yan diomande":"FWD","yan valery":"DF","yang hyun-jun":"MD","yannick semedo":"MD","yasin ayari":"MD","yasser ibrahim":"DF","yassin fortune":"FWD","yassine bounou":"GK","yazan al-arab":"DF","yazeed abulaila":"GK","yehvann diouf":"GK","yeremy pino":"FWD","yerry mina":"DF","yoane wissa":"FWD","yoel barcenas":"MD","youri tielemans":"MD","youssef amyn":"MD","youssef belammari":"DF","yuito suzuki":"FWD","yukinari sugawara":"MD","yunus akgun":"FWD","yusuf abdurisag":"FWD","yuto nagatomo":"MD","yvon mvogo":"GK","zaid ismail":"MD","zaid tahseen":"DF","zakaria el ouahdi":"DF","zeki amdouni":"FWD","zeki celik":"DF","zeno debast":"DF","zidane iqbal":"MD","zineddine belaid":"DF","zion suzuki":"GK","ziyad al-johani":"MD","zizo":"FWD"};
+
 function buildMarkets(m, cfg = {}) {
   const H = m.home, A = m.away;
   const sel = (id, label, oddsStr, meta = {}) => ({ id, label, oddsStr, odds: toDecimal(oddsStr), meta });
 
   const homeP = cfg?.players?.home?.length ? cfg.players.home : defaultPlayers(H, "home");
   const awayP = cfg?.players?.away?.length ? cfg.players.away : defaultPlayers(A, "away");
+  const plabel = (p) => { const pos = p.pos || POS_BY_NAME[(p.name || "").trim().toLowerCase()]; return pos ? `${p.name} (${pos})` : p.name; };
   const scorerSel = (kind) => [
-    ...homeP.map((p, i) => sel("h" + kind[0] + i, p.name, kind === "first" ? (p.first || "10/1") : (p.any || "4/1"), { scorer: p.name, order: kind })),
-    ...awayP.map((p, i) => sel("a" + kind[0] + i, p.name, kind === "first" ? (p.first || "10/1") : (p.any || "4/1"), { scorer: p.name, order: kind })),
+    ...homeP.map((p, i) => sel("h" + kind[0] + i, plabel(p), kind === "first" ? (p.first || "10/1") : (p.any || "4/1"), { scorer: p.name, order: kind })),
+    ...awayP.map((p, i) => sel("a" + kind[0] + i, plabel(p), kind === "first" ? (p.first || "10/1") : (p.any || "4/1"), { scorer: p.name, order: kind })),
     sel(kind[0] + "o", "Other Player", kind === "first" ? "12/1" : "8/1", { scorer: "__OTHER__", order: kind }),
   ];
 
@@ -380,6 +384,17 @@ function buildMarkets(m, cfg = {}) {
         sel("oga", `${A} concede Own Goal`, "10/1", { og: "A" }),
       ] },
   ];
+
+  // admin-added extra options for HT/FT correct score & total goals — meta is set so the
+  // EXISTING settlement engine grades them automatically (no settlement changes needed)
+  const addLines = cfg?.addLines || {};
+  for (const mk of markets) {
+    const extra = addLines[mk.key];
+    if (!extra?.length) continue;
+    const sels = extra.map((a) => ({ id: a.id, label: a.label, oddsStr: a.oddsStr, odds: toDecimal(a.oddsStr), meta: a.meta }));
+    const oi = mk.selections.findIndex((s) => s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__"); // keep "Other Score" last
+    if (oi >= 0) mk.selections.splice(oi, 0, ...sels); else mk.selections.push(...sels);
+  }
 
   // apply admin odds overrides for the fixed markets
   if (cfg?.odds) for (const mk of markets) for (const s of mk.selections) {
@@ -586,9 +601,17 @@ function picksHTML(bets, title, byPlayer) {
     ids.forEach((mid) => {
       body += `<h3>${matchName(+mid)}</h3><table><thead><tr><th>Category</th><th>Selection</th><th>Odds</th><th>Stake</th><th>Result</th><th>Coins +/−</th></tr></thead><tbody>`;
       let sub = 0, subStake = 0;
+      // club identical picks (same category + selection + odds) placed across multiple slips
+      const grouped = {};
       byMatch[mid].forEach(({ it, b }) => {
-        const pl = itemPL(b, it); sub += pl; subStake += it.stake;
-        body += `<tr><td>${it.marketTitle}</td><td>${it.label}${it.customName ? ` — ${it.customName}` : ""}</td><td>${it.oddsStr}</td><td>${fmtN(it.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(pl)}</tr>`;
+        const k = `${it.marketKey}|${it.selId}|${(it.customName || "")}|${it.oddsStr}`;
+        if (!grouped[k]) { grouped[k] = { it, stake: 0, pl: 0, n: 0 }; }
+        grouped[k].stake += it.stake; grouped[k].pl += itemPL(b, it); grouped[k].n++;
+      });
+      Object.values(grouped).forEach((g) => {
+        const it = g.it; sub += g.pl; subStake += g.stake;
+        const mult = g.n > 1 ? ` <span style="color:#6b7a74">×${g.n}</span>` : "";
+        body += `<tr><td>${it.marketTitle}</td><td>${it.label}${it.customName ? ` — ${it.customName}` : ""}${mult}</td><td>${it.oddsStr}</td><td>${fmtN(g.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(g.pl)}</tr>`;
       });
       body += `<tr class="sub"><td colspan="3">Match subtotal</td><td>${fmtN(subStake)}</td><td></td>${plCell(sub)}</tr></tbody></table>`;
       playerTotal += sub; playerStake += subStake;
@@ -2834,12 +2857,16 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const [away, setAway] = useState(() => seedPlayers("away", match.away));
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
   const [specials, setSpecials] = useState(() => (config?.specials || []).map((s) => ({ ...s })));
+  const [addLines, setAddLines] = useState(() => JSON.parse(JSON.stringify(config?.addLines || {})));
   const [live, setLive] = useState(!!config?.live);
   const [busy, setBusy] = useState(false);
 
   // markets to expose for odds editing (scorers handled via the player editor)
-  const editable = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials })
-    .filter((mk) => !["first_scorer", "anytime_scorer"].includes(mk.key)), [match, home, away, odds, specials]);
+  const editable = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines })
+    .filter((mk) => !["first_scorer", "anytime_scorer"].includes(mk.key)), [match, home, away, odds, specials, addLines]);
+
+  const addLine = (key, label, meta, oddsStr) => setAddLines((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_x_${uid()}`, label, meta, oddsStr: oddsStr || "10/1" }] }));
+  const delLine = (key, id) => setAddLines((a) => ({ ...a, [key]: (a[key] || []).filter((x) => x.id !== id) }));
 
   const setPlayer = (side, i, field, val) => {
     const list = side === "home" ? [...home] : [...away];
@@ -2847,7 +2874,7 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
     side === "home" ? setHome(list) : setAway(list);
   };
   const addPlayer = (side) => {
-    const row = { name: "", first: "10/1", any: "4/1" };
+    const row = { name: "", pos: "", first: "10/1", any: "4/1" };
     side === "home" ? setHome([...home, row]) : setAway([...away, row]);
   };
   const delPlayer = (side, i) => {
@@ -2860,9 +2887,9 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const delSpecial = (i) => setSpecials((s) => s.filter((_, j) => j !== i));
 
   const cleanCfg = (liveVal) => {
-    const clean = (arr) => arr.filter((p) => p.name.trim()).map((p) => ({ name: p.name.trim(), first: p.first || "10/1", any: p.any || "4/1" }));
+    const clean = (arr) => arr.filter((p) => p.name.trim()).map((p) => ({ name: p.name.trim(), pos: p.pos || "", first: p.first || "10/1", any: p.any || "4/1" }));
     const cleanSp = specials.filter((s) => (s.label || "").trim()).map((s) => ({ id: s.id, label: s.label.trim(), odds: s.odds || "2/1" }));
-    return { players: { home: clean(home), away: clean(away) }, odds, specials: cleanSp, live: liveVal };
+    return { players: { home: clean(home), away: clean(away) }, odds, specials: cleanSp, addLines, live: liveVal };
   };
   const save = async () => {
     setBusy(true);
@@ -2909,14 +2936,14 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
             <span className="text-sm font-bold">{team} — Players</span>
             <button onClick={() => addPlayer(side)} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-300"><Plus className="h-3 w-3" /> Add</button>
           </div>
-          <div className="mb-1 grid grid-cols-[1fr_60px_60px_26px] gap-2 px-1 text-[10px] uppercase tracking-wide text-stone-500">
-            <span>Player (pick or type)</span><span>1st</span><span>Any</span><span></span>
+          <div className="mb-1 grid grid-cols-[1fr_52px_52px_52px_24px] gap-2 px-1 text-[10px] uppercase tracking-wide text-stone-500">
+            <span>Player (pick or type)</span><span>Pos</span><span>1st</span><span>Any</span><span></span>
           </div>
           <div className="space-y-1.5">
             {list.map((p, i) => {
               const custom = !squad.includes(p.name);
               return (
-              <div key={i} className="grid grid-cols-[1fr_60px_60px_26px] items-start gap-2">
+              <div key={i} className="grid grid-cols-[1fr_52px_52px_52px_24px] items-start gap-2">
                 <div>
                   <select value={custom ? "__CUSTOM__" : p.name}
                     onChange={(e) => setPlayer(side, i, "name", e.target.value === "__CUSTOM__" ? "" : e.target.value)}
@@ -2927,6 +2954,9 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
                   </select>
                   {custom && <input value={p.name} onChange={(e) => setPlayer(side, i, "name", e.target.value)} placeholder="Type player name" className={ipt + " mt-1"} />}
                 </div>
+                <select value={p.pos || ""} onChange={(e) => setPlayer(side, i, "pos", e.target.value)} className={ipt + " px-1 text-center"}>
+                  <option value="">—</option><option value="GK">GK</option><option value="DF">DF</option><option value="MD">MD</option><option value="FWD">FWD</option>
+                </select>
                 <input value={p.first} onChange={(e) => setPlayer(side, i, "first", e.target.value)} placeholder="5/1" className={ipt + " text-center"} />
                 <input value={p.any} onChange={(e) => setPlayer(side, i, "any", e.target.value)} placeholder="2/1" className={ipt + " text-center"} />
                 <button onClick={() => delPlayer(side, i)} className="flex h-9 items-center justify-center rounded-lg bg-rose-500/15 text-rose-300"><X className="h-3.5 w-3.5" /></button>
@@ -2968,6 +2998,14 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+        <div className="mb-1 text-sm font-bold">➕ Add extra options (graded automatically)</div>
+        <p className="mb-2 text-[11px] text-stone-400">Add scores or goal lines not in the default list. These are graded by the same engine — no special handling needed.</p>
+        <ScoreLineAdder label={`Half-Time score`} H={match.home} A={match.away} field="ht" mkey="ht_score" lines={addLines.ht_score} onAdd={addLine} onDel={delLine} />
+        <ScoreLineAdder label={`Full-Time score`} H={match.home} A={match.away} field="ft" mkey="ft_score" lines={addLines.ft_score} onAdd={addLine} onDel={delLine} />
+        <GoalsLineAdder lines={addLines.total_goals} onAdd={addLine} onDel={delLine} />
       </div>
 
       <div className="mt-5 mb-2 text-sm font-bold">Odds — other markets</div>
@@ -3077,6 +3115,66 @@ function OutrightWinnerEditor({ mk, odds, setOdd, onAdd, onDelete }) {
   );
 }
 const ogSelCls = "rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-400/50";
+
+// add custom HT/FT correct-score lines (home & away goals). meta.{ht|ft}="h-a" → graded by the engine.
+function ScoreLineAdder({ label, H, A, field, mkey, lines = [], onAdd, onDel }) {
+  const [h, setH] = useState(""); const [a, setA] = useState(""); const [od, setOd] = useState("");
+  const add = () => {
+    const hh = parseInt(h), aa = parseInt(a);
+    if (isNaN(hh) || isNaN(aa)) return;
+    onAdd(mkey, `${H} ${hh}-${aa} ${A}`, { [field]: `${hh}-${aa}` }, (od || "").trim() || "20/1");
+    setH(""); setA(""); setOd("");
+  };
+  return (
+    <div className="mb-2 rounded-lg border border-white/10 bg-black/20 p-2.5">
+      <div className="mb-1.5 text-xs font-semibold text-stone-300">{label}</div>
+      {lines.map((l) => (
+        <div key={l.id} className="mb-1 flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 flex-1 text-stone-300">{l.label} <span className="text-stone-500">@ {l.oddsStr}</span></span>
+          <button onClick={() => onDel(mkey, l.id)} className="shrink-0 rounded-md bg-white/5 p-1 text-stone-400 hover:text-rose-300"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1.5">
+        <input value={h} onChange={(e) => setH(e.target.value)} type="number" placeholder={H.slice(0, 3)} className={ipt + " w-14 text-center"} />
+        <span className="text-stone-500">-</span>
+        <input value={a} onChange={(e) => setA(e.target.value)} type="number" placeholder={A.slice(0, 3)} className={ipt + " w-14 text-center"} />
+        <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="20/1" className={ipt + " w-16 text-center"} />
+        <button onClick={add} className="shrink-0 rounded-md bg-emerald-400/90 px-2.5 py-1.5 text-xs font-bold text-black">Add</button>
+      </div>
+    </div>
+  );
+}
+
+// add custom Total Goals lines (Exactly / Over / Under N). meta.tg → graded by the engine.
+function GoalsLineAdder({ lines = [], onAdd, onDel }) {
+  const [kind, setKind] = useState("eq"); const [n, setN] = useState(""); const [od, setOd] = useState("");
+  const add = () => {
+    const num = parseFloat(n); if (isNaN(num)) return;
+    const meta = { tg: kind === "eq" ? { eq: num } : kind === "gt" ? { gt: num } : { lt: num } };
+    const label = kind === "eq" ? `Exactly ${num}` : kind === "gt" ? `Over ${num}` : `Under ${num}`;
+    onAdd("total_goals", label, meta, (od || "").trim() || "10/1");
+    setN(""); setOd("");
+  };
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/20 p-2.5">
+      <div className="mb-1.5 text-xs font-semibold text-stone-300">Total Goals</div>
+      {lines.map((l) => (
+        <div key={l.id} className="mb-1 flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 flex-1 text-stone-300">{l.label} <span className="text-stone-500">@ {l.oddsStr}</span></span>
+          <button onClick={() => onDel("total_goals", l.id)} className="shrink-0 rounded-md bg-white/5 p-1 text-stone-400 hover:text-rose-300"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1.5">
+        <select value={kind} onChange={(e) => setKind(e.target.value)} className={ipt + " w-24"}>
+          <option value="eq">Exactly</option><option value="gt">Over</option><option value="lt">Under</option>
+        </select>
+        <input value={n} onChange={(e) => setN(e.target.value)} type="number" step="0.5" placeholder={kind === "eq" ? "5" : "3.5"} className={ipt + " w-16 text-center"} />
+        <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="10/1" className={ipt + " w-16 text-center"} />
+        <button onClick={add} className="shrink-0 rounded-md bg-emerald-400/90 px-2.5 py-1.5 text-xs font-bold text-black">Add</button>
+      </div>
+    </div>
+  );
+}
 
 function OddsMarket({ mk, odds, setOdd }) {
   const [open, setOpen] = useState(false);
