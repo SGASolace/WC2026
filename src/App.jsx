@@ -2058,12 +2058,14 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
   const settledMatches = Object.keys(results).filter((k) => +k > 0).length;
   const settledFmMd = Object.keys(results).filter((k) => +k <= -11 && +k >= -19).length;
   const liveMatches = FIXTURES.filter((mm) => configs?.[mm.n]?.live).length;
+  const liveMatchStakes = bets.filter((b) => (b.kind || "match") === "match")
+    .reduce((acc, b) => acc + b.items.reduce((s, it) => s + (configs?.[it.matchId]?.live ? it.stake : 0), 0), 0);
   const totalDeposit = players.reduce((a, p) => a + Number(p.deposit || 0) + Number(p.og_deposit || 0), 0);
   const totalBonus = players.reduce((a, p) => a + Number(p.bonus || 0) + Number(p.og_bonus || 0), 0);
   const pl = (x) => x.stake - x.payout;
   const STAT = {
     settle: [["Players", nPlayers], ["Match Entries", m.n], ["Match Stakes", money(m.stake)], ["Match Payouts", money(m.payout), true], ["Settled Matches", `${settledMatches}/72`], ["Match Pool P/L", money(pl(m)), pl(m) >= 0]],
-    manage: [["Players", nPlayers], ["Live Matches", `${liveMatches}/72`], ["Draft (not live)", `${72 - liveMatches}/72`], ["Settled Matches", `${settledMatches}/72`]],
+    manage: [["Players", nPlayers], ["Live Matches", `${liveMatches}/72`], ["Draft (not live)", `${72 - liveMatches}/72`], ["Settled Matches", `${settledMatches}/72`], ["Total Match Stakes", money(m.stake)], ["Live Match Stakes", money(liveMatchStakes)]],
     outrights: [["Players", nPlayers], ["Outright Entries", o.n], ["Outright Stakes", money(o.stake)], ["Outright Payouts", money(o.payout), true], ["Winners Declared", results[-1] ? "Yes" : "No"], ["Outright Pool P/L", money(pl(o)), pl(o) >= 0]],
     fantasy: [["Players", nPlayers], ["Fantasy Entries", f.n], ["Fantasy Stakes", money(f.stake)], ["Fantasy Payouts", money(f.payout), true], ["Settled Matchdays", `${settledFmMd}/9`], ["Fantasy Pool P/L", money(pl(f)), pl(f) >= 0]],
     players: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Settled Matches", `${settledMatches}/72`], ["Settled Fantasy MDs", `${settledFmMd}/9`], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
@@ -2112,7 +2114,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         <>
           <SectionTitle icon={<Settings className="h-5 w-5" />} title="Result Settlement" sub="Enter outcomes — the engine settles every prediction automatically" />
           {!pick ? (
-            <MatchPicker results={results} onPick={setPick} />
+            <MatchPicker results={results} onPick={setPick} bets={bets} />
           ) : (
             <SettleForm match={pick} config={configs[pick.n]} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} resetMatch={resetMatch} bets={bets} showToast={showToast} />
           )}
@@ -2629,9 +2631,14 @@ function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerO
   );
 }
 
-function MatchPicker({ results, configs, onPick, manage }) {
+function MatchPicker({ results, configs, onPick, manage, bets }) {
   const [q, setQ] = useState("");
   const list = FIXTURES.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
+  const matchBetsFor = (n) => (bets || [])
+    .map((b) => ({ ...b, items: b.items.filter((it) => it.matchId === n) }))
+    .filter((b) => b.items.length);
+  const dlPDF = (m) => { const mb = matchBetsFor(m.n); if (!mb.length) return; printPicks(mb, `${m.home} v ${m.away} — Match Picks`, true); };
+  const dlCSV = (m) => { const mb = matchBetsFor(m.n); if (!mb.length) return; exportPicksCSV(mb, `SGA_${m.home}_v_${m.away}_picks.csv`.replace(/\s+/g, "_"), true); };
   return (
     <div>
       <div className="relative mb-3">
@@ -2640,21 +2647,32 @@ function MatchPicker({ results, configs, onPick, manage }) {
           className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        {list.map((m) => (
-          <button key={m.n} onClick={() => onPick(m)}
-            className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left text-sm hover:border-emerald-400/40">
-            <span className="truncate">{m.hf} {m.home} v {m.away} {m.af}</span>
-            {manage
-              ? (<span className="flex shrink-0 items-center gap-1">
-                  {configs?.[m.n]?.live
-                    ? <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">LIVE</span>
-                    : configs?.[m.n] ? <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">DRAFT</span>
-                    : <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-stone-500">NOT SET</span>}
-                  <ChevronRight className="h-4 w-4 text-stone-600" />
-                </span>)
-              : (results[m.n] ? <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">{results[m.n].ft.h}–{results[m.n].ft.a}</span> : <ChevronRight className="h-4 w-4 shrink-0 text-stone-600" />)}
-          </button>
-        ))}
+        {list.map((m) => {
+          const settled = results[m.n];
+          const cfg = configs?.[m.n];
+          const picks = (bets || []).reduce((a, b) => a + b.items.filter((it) => it.matchId === m.n).length, 0);
+          return (
+            <div key={m.n} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+              <button onClick={() => onPick(m)} className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-emerald-300">
+                <span className="truncate">{m.hf} {m.home} v {m.away} {m.af}</span>
+              </button>
+              <span className="flex shrink-0 items-center gap-1">
+                {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">SETTLED{!manage ? ` ${settled.ft.h}–${settled.ft.a}` : ""}</span>}
+                {manage && (cfg?.live
+                  ? <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">LIVE</span>
+                  : cfg ? <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">DRAFT</span>
+                  : <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-stone-500">NOT SET</span>)}
+                {!manage && picks > 0 && (
+                  <>
+                    <button onClick={() => dlCSV(m)} title={`Excel — ${picks} picks`} className="rounded-md bg-white/5 p-1 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => dlPDF(m)} title={`PDF — ${picks} picks`} className="rounded-md bg-white/5 p-1 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
+                  </>
+                )}
+                <button onClick={() => onPick(m)} className="text-stone-600 hover:text-emerald-400"><ChevronRight className="h-4 w-4" /></button>
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2887,6 +2905,8 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
     if (existing.has(sig(meta))) { showToast(`“${label}” is already in this market`, "err"); return; }
     setAddLines((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_x_${uid()}`, label, meta, oddsStr: oddsStr || "10/1" }] }));
   };
+  const [preview, setPreview] = useState(false);
+  const previewMarkets = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines }), [match, home, away, odds, specials, addLines]);
   const delLine = (key, id) => setAddLines((a) => ({ ...a, [key]: (a[key] || []).filter((x) => x.id !== id) }));
 
   const setPlayer = (side, i, field, val) => {
@@ -3051,7 +3071,29 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         ))}
       </div>
 
-      <button onClick={save} disabled={busy} className="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
+      <button onClick={() => setPreview((p) => !p)}
+        className="mt-5 w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 text-sm font-semibold text-emerald-300 hover:bg-white/[0.06]">
+        {preview ? "Hide preview" : "👁  Preview what players will see"}
+      </button>
+      {preview && (
+        <div className="mt-2 space-y-2.5 rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-[11px] text-stone-400">Exactly what players see for this match with the current settings — review before saving.</p>
+          {previewMarkets.map((mk) => (
+            <div key={mk.key}>
+              <div className="mb-1 text-xs font-bold text-stone-300">{mk.icon} {mk.title}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {mk.selections.map((s) => (
+                  <span key={s.id} className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-stone-300">
+                    {s.label} <span className="font-bold text-emerald-300">{s.oddsStr}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black disabled:opacity-50">
         {busy ? "Saving…" : "Save Odds & Players"}
       </button>
     </div>
