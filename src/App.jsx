@@ -535,6 +535,19 @@ const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
 // realized profit/loss for one selection: won → stake×(odds−1); lost → −stake; open → 0 (pending)
 const itemPL = (bet, it) => it.status === "won" ? it.stake * (it.odds - 1) : it.status === "lost" ? -it.stake : 0;
 
+// display text for a pick's selection — appends GK/DF/MD/FWD for scorer picks (even older ones
+// whose stored label predates positions), and shows the chosen name for "Other …" picks
+function selDisplay(it) {
+  const isScorer = it.marketKey === "first_scorer" || it.marketKey === "anytime_scorer";
+  let name = it.customName ? `${it.label} — ${it.customName}` : it.label;
+  if (isScorer) {
+    const who = (it.meta?.scorer && it.meta.scorer !== "__OTHER__") ? it.meta.scorer : (it.customName || "");
+    const pos = who && POS_BY_NAME[who.trim().toLowerCase()];
+    if (pos && !name.trim().endsWith(")")) name += ` (${pos})`;
+  }
+  return name;
+}
+
 function downloadFile(name, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -560,7 +573,7 @@ function exportPicksCSV(bets, filename, byPlayer) {
       let sub = 0, subStake = 0;
       byMatch[mid].forEach(({ it, b }) => {
         const pl = itemPL(b, it); sub += pl; subStake += it.stake;
-        lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, it.label + (it.customName ? ` — ${it.customName}` : ""), it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
+        lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, selDisplay(it), it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
       });
       lines.push(["", matchName(+mid), "", "", "", Math.round(subStake), "", "", "SUBTOTAL", Math.round(sub)].map(esc).join(","));
       playerTotal += sub; playerStake += subStake;
@@ -611,7 +624,7 @@ function picksHTML(bets, title, byPlayer) {
       Object.values(grouped).forEach((g) => {
         const it = g.it; sub += g.pl; subStake += g.stake;
         const mult = g.n > 1 ? ` <span style="color:#6b7a74">×${g.n}</span>` : "";
-        body += `<tr><td>${it.marketTitle}</td><td>${it.label}${it.customName ? ` — ${it.customName}` : ""}${mult}</td><td>${it.oddsStr}</td><td>${fmtN(g.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(g.pl)}</tr>`;
+        body += `<tr><td>${it.marketTitle}</td><td>${selDisplay(it)}${mult}</td><td>${it.oddsStr}</td><td>${fmtN(g.stake)}</td><td class="s-${it.status}">${it.status}</td>${plCell(g.pl)}</tr>`;
       });
       body += `<tr class="sub"><td colspan="3">Match subtotal</td><td>${fmtN(subStake)}</td><td></td>${plCell(sub)}</tr></tbody></table>`;
       playerTotal += sub; playerStake += subStake;
@@ -1965,7 +1978,7 @@ function BetCard({ b }) {
             <div key={it.selId + it.matchId} className="flex items-center justify-between text-xs">
               <div className="min-w-0">
                 <span className="text-stone-500">{it.marketTitle}: </span>
-                <span className="font-medium">{it.label}{it.customName ? ` — ${it.customName}` : ""}</span>
+                <span className="font-medium">{selDisplay(it)}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className="text-emerald-300">@{it.oddsStr}</span>
