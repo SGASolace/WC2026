@@ -905,7 +905,7 @@ export default function App() {
         <div className="bg-[radial-gradient(120%_60%_at_50%_-10%,rgba(16,185,129,0.18),transparent),radial-gradient(90%_50%_at_90%_0%,rgba(245,158,11,0.12),transparent)] min-h-screen">
           <Header user={user} dark={dark} setDark={setDark} onLogout={async () => { await supabase.auth.signOut(); setSlip([]); setTab("matches"); }} />
 
-          <main className="mx-auto max-w-5xl px-4 pb-32 pt-4">
+          <main className="mx-auto max-w-5xl overflow-x-hidden px-4 pb-32 pt-4">
             {role === "admin" ? (
               <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
@@ -2652,9 +2652,9 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
           const cfg = configs?.[m.n];
           const picks = (bets || []).reduce((a, b) => a + b.items.filter((it) => it.matchId === m.n).length, 0);
           return (
-            <div key={m.n} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
-              <button onClick={() => onPick(m)} className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-emerald-300">
-                <span className="truncate">{m.hf} {m.home} v {m.away} {m.af}</span>
+            <div key={m.n} className="flex items-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
+              <button onClick={() => onPick(m)} className="min-w-0 flex-1 truncate text-left hover:text-emerald-300">
+                {m.hf} {m.home} v {m.away} {m.af}
               </button>
               <span className="flex shrink-0 items-center gap-1">
                 {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">SETTLED{!manage ? ` ${settled.ft.h}–${settled.ft.a}` : ""}</span>}
