@@ -2878,7 +2878,15 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const editable = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines })
     .filter((mk) => !["first_scorer", "anytime_scorer"].includes(mk.key)), [match, home, away, odds, specials, addLines]);
 
-  const addLine = (key, label, meta, oddsStr) => setAddLines((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_x_${uid()}`, label, meta, oddsStr: oddsStr || "10/1" }] }));
+  const addLine = (key, label, meta, oddsStr) => {
+    const sig = (m) => key === "total_goals" ? JSON.stringify(m.tg) : (m.ht || m.ft);
+    const mkt = buildMarkets(match, { players: { home, away }, odds, specials, addLines }).find((x) => x.key === key);
+    const existing = new Set((mkt?.selections || [])
+      .map((s) => key === "total_goals" ? JSON.stringify(s.meta?.tg) : (s.meta?.ht || s.meta?.ft))
+      .filter((x) => x && x !== "__OTHER__"));
+    if (existing.has(sig(meta))) { showToast(`“${label}” is already in this market`, "err"); return; }
+    setAddLines((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_x_${uid()}`, label, meta, oddsStr: oddsStr || "10/1" }] }));
+  };
   const delLine = (key, id) => setAddLines((a) => ({ ...a, [key]: (a[key] || []).filter((x) => x.id !== id) }));
 
   const setPlayer = (side, i, field, val) => {
@@ -2904,7 +2912,21 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
     const cleanSp = specials.filter((s) => (s.label || "").trim()).map((s) => ({ id: s.id, label: s.label.trim(), odds: s.odds || "2/1" }));
     return { players: { home: clean(home), away: clean(away) }, odds, specials: cleanSp, addLines, live: liveVal };
   };
+  // block saving when a player or special is listed more than once
+  const dupError = () => {
+    const dn = (arr, team) => {
+      const seen = new Set();
+      for (const p of arr) { const n = (p.name || "").trim().toLowerCase(); if (!n) continue; if (seen.has(n)) return `${p.name.trim()} is listed twice for ${team} — remove the duplicate`; seen.add(n); }
+      return null;
+    };
+    const e1 = dn(home, match.home); if (e1) return e1;
+    const e2 = dn(away, match.away); if (e2) return e2;
+    const sp = new Set();
+    for (const s of specials) { const l = (s.label || "").trim().toLowerCase(); if (!l) continue; if (sp.has(l)) return `Match Special “${s.label.trim()}” is added twice — remove the duplicate`; sp.add(l); }
+    return null;
+  };
   const save = async () => {
+    const de = dupError(); if (de) { showToast(de, "err"); return; }
     setBusy(true);
     try {
       await saveConfig(match.n, cleanCfg(live));
@@ -2914,6 +2936,7 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
     finally { setBusy(false); }
   };
   const toggleLive = async () => {
+    const de = dupError(); if (de) { showToast(de, "err"); return; }
     const next = !live;
     setBusy(true);
     try {
