@@ -2059,7 +2059,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
   const settledFmMd = Object.keys(results).filter((k) => +k <= -11 && +k >= -19).length;
   const liveMatches = FIXTURES.filter((mm) => configs?.[mm.n]?.live).length;
   const liveMatchStakes = bets.filter((b) => (b.kind || "match") === "match")
-    .reduce((acc, b) => acc + b.items.reduce((s, it) => s + (configs?.[it.matchId]?.live ? it.stake : 0), 0), 0);
+    .reduce((acc, b) => acc + b.items.reduce((s, it) => s + (configs?.[it.matchId]?.live && !results[it.matchId] ? it.stake : 0), 0), 0);
   const totalDeposit = players.reduce((a, p) => a + Number(p.deposit || 0) + Number(p.og_deposit || 0), 0);
   const totalBonus = players.reduce((a, p) => a + Number(p.bonus || 0) + Number(p.og_bonus || 0), 0);
   const pl = (x) => x.stake - x.payout;
