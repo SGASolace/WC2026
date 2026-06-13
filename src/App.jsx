@@ -1135,7 +1135,7 @@ function Header({ user, dark, setDark, onLogout }) {
 /* ---------- Match list ---------- */
 function MatchList({ onOpen, results, configs, now, nickname }) {
   const [q, setQ] = useState("");
-  const liveFixtures = useMemo(() => FIXTURES.filter((m) => configs?.[m.n]?.live), [configs]);
+  const liveFixtures = useMemo(() => FIXTURES.filter((m) => configs?.[m.n]?.live && !results[m.n]), [configs, results]);
   const grouped = useMemo(() => {
     const f = liveFixtures.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
     const g = {};
