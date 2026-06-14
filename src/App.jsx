@@ -910,7 +910,7 @@ export default function App() {
               <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
-                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} />}
+                {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} myBets={myMatchBets} />}
                 {tab === "matches" && activeMatch && (
                   <MatchDetail match={activeMatch} config={configs[activeMatch.n]} onBack={() => setActiveMatch(null)} slip={slip} setSlip={setSlip} results={results} showToast={showToast} now={now} />
                 )}
@@ -1133,9 +1133,14 @@ function Header({ user, dark, setDark, onLogout }) {
 }
 
 /* ---------- Match list ---------- */
-function MatchList({ onOpen, results, configs, now, nickname }) {
+function MatchList({ onOpen, results, configs, now, nickname, myBets = [] }) {
   const [q, setQ] = useState("");
   const liveFixtures = useMemo(() => FIXTURES.filter((m) => configs?.[m.n]?.live && !results[m.n]), [configs, results]);
+  const stakeOn = (n) => myBets.reduce((a, b) => a + b.items.filter((it) => it.matchId === n).reduce((s, it) => s + it.stake, 0), 0);
+  const dlPDF = (m) => {
+    const mb = myBets.map((b) => ({ ...b, items: b.items.filter((it) => it.matchId === m.n) })).filter((b) => b.items.length);
+    if (mb.length) printPicks(mb, `${m.home} v ${m.away} — My Picks`, false);
+  };
   const grouped = useMemo(() => {
     const f = liveFixtures.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
     const g = {};
@@ -1176,15 +1181,16 @@ function MatchList({ onOpen, results, configs, now, nickname }) {
                 const settled = results[m.n];
                 const locked = !settled && isLocked(m, now);
                 const closing = !settled && !locked ? lockCountdown(m, now) : null;
+                const myStake = stakeOn(m.n);
                 return (
-                  <button key={m.n} onClick={() => onOpen(m)}
-                    className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition hover:border-emerald-400/40 hover:bg-white/[0.06]">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2 text-[11px] text-stone-500">
+                  <div key={m.n}
+                    className="group flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 transition hover:border-emerald-400/40 hover:bg-white/[0.06]">
+                    <button onClick={() => onOpen(m)} className="min-w-0 flex-1 text-left">
+                      <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-stone-500">
                         <Clock className="h-3 w-3" /> {kickoffLocal(m)} {TZ_ABBR}
-                        {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-300">SETTLED {settled.ft.h}–{settled.ft.a}</span>}
                         {locked && <span className="rounded bg-rose-500/20 px-1.5 py-0.5 font-semibold text-rose-300">🔒 LOCKED</span>}
                         {closing && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">closes in {closing}</span>}
+                        {myStake > 0 && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-300">In bets: {money(myStake)}</span>}
                       </div>
                       <div className="flex items-center gap-2 text-sm font-semibold">
                         <span className="text-lg">{m.hf}</span><span className="truncate">{m.home}</span>
@@ -1192,9 +1198,15 @@ function MatchList({ onOpen, results, configs, now, nickname }) {
                       <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold">
                         <span className="text-lg">{m.af}</span><span className="truncate">{m.away}</span>
                       </div>
-                    </div>
-                    <ChevronRight className="h-5 w-5 shrink-0 text-stone-600 transition group-hover:translate-x-0.5 group-hover:text-emerald-400" />
-                  </button>
+                    </button>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {myStake > 0 && (
+                        <button onClick={() => dlPDF(m)} title="Download my picks for this match (PDF)"
+                          className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><Receipt className="h-4 w-4" /></button>
+                      )}
+                      <button onClick={() => onOpen(m)} className="text-stone-600 transition group-hover:translate-x-0.5 group-hover:text-emerald-400"><ChevronRight className="h-5 w-5" /></button>
+                    </span>
+                  </div>
                 );
               })}
             </div>
