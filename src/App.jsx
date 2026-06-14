@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Trophy, Calendar, Clock, Receipt, ListChecks, Crown, ShieldCheck, LogOut,
   Search, Plus, X, Lock, Check, ChevronRight, ChevronLeft, Sun, Moon,
-  Settings, BarChart3, Users, Wallet, TrendingUp, Flag, Ticket, AlertCircle,
+  Settings, BarChart3, Users, Wallet, TrendingUp, Flag, Ticket, AlertCircle, Ban,
 } from "lucide-react";
 import { supabase, hasSupabase } from "./supabaseClient.js";
 
@@ -559,14 +559,17 @@ const stripPlayer = (p) => p.trim().toLowerCase();
 // Each selection settles independently (singles). A slip stays open until all its
 // selections are decided; then it pays the sum of the winning selections' returns.
 function recomputeBet(bet, resultsMap) {
-  const anyOpen = bet.items.some((it) => !resultsMap[it.matchId]);
-  if (anyOpen) return { items: bet.items.map((it) => ({ ...it, status: "open" })), status: "open", payout: 0 };
+  const live = bet.items.filter((it) => it.status !== "void");
+  const anyOpen = live.some((it) => !resultsMap[it.matchId]);
+  if (anyOpen) return { items: bet.items.map((it) => it.status === "void" ? it : ({ ...it, status: "open" })), status: "open", payout: 0 };
   let payout = 0, anyWon = false;
   const items = bet.items.map((it) => {
+    if (it.status === "void") return it; // voided picks are settled — excluded from grading & payout
     const won = evaluateItem(it, resultsMap[it.matchId]);
     if (won) { payout += it.stake * it.odds; anyWon = true; }
     return { ...it, status: won ? "won" : "lost" };
   });
+  if (!live.length) return { items, status: "void", payout: 0 }; // whole slip voided
   return { items, status: anyWon ? "won" : "lost", payout: anyWon ? payout : 0 };
 }
 
@@ -614,7 +617,7 @@ function exportPicksCSV(bets, filename, byPlayer) {
     Object.keys(byMatch).sort((a, b) => a - b).forEach((mid) => {
       let sub = 0, subStake = 0;
       byMatch[mid].forEach(({ it, b }) => {
-        const pl = itemPL(b, it); sub += pl; subStake += it.stake;
+        const pl = itemPL(b, it); sub += pl; subStake += (it.status === "void" ? 0 : it.stake);
         lines.push([byPlayer ? player : "", matchName(+mid), it.marketTitle, selDisplay(it), it.oddsStr, it.stake, it.status, b.code, b.status, Math.round(pl)].map(esc).join(","));
       });
       lines.push(["", matchName(+mid), "", "", "", Math.round(subStake), "", "", "SUBTOTAL", Math.round(sub)].map(esc).join(","));
@@ -659,9 +662,9 @@ function picksHTML(bets, title, byPlayer) {
       // club identical picks (same category + selection + odds) placed across multiple slips
       const grouped = {};
       byMatch[mid].forEach(({ it, b }) => {
-        const k = `${it.marketKey}|${it.selId}|${(it.customName || "")}|${it.oddsStr}`;
+        const k = `${it.marketKey}|${it.selId}|${(it.customName || "")}|${it.oddsStr}|${it.status}`;
         if (!grouped[k]) { grouped[k] = { it, stake: 0, pl: 0, n: 0 }; }
-        grouped[k].stake += it.stake; grouped[k].pl += itemPL(b, it); grouped[k].n++;
+        grouped[k].stake += (it.status === "void" ? 0 : it.stake); grouped[k].pl += itemPL(b, it); grouped[k].n++;
       });
       Object.values(grouped).forEach((g) => {
         const it = g.it; sub += g.pl; subStake += g.stake;
@@ -855,6 +858,24 @@ export default function App() {
   }, [session, refresh]);
 
   const placeBet = async (bet) => { await db.insertBet(bet, session.user.id); await refresh(); };
+
+  // void a single pick (selection) within a slip: refund its stake, exclude it from settlement.
+  // works whether the slip is open or already settled — re-grades the remaining picks from current results.
+  const voidPick = async (betId, selId, matchId, reason) => {
+    const b = bets.find((x) => x.id === betId);
+    if (!b) throw new Error("Slip not found");
+    const items = b.items.map((it) =>
+      (it.selId === selId && it.matchId === matchId && it.status !== "void")
+        ? { ...it, status: "void", voidReason: (reason || "").trim(), voidedAt: new Date().toISOString(), voidedBy: profile.nickname }
+        : it);
+    const live = items.filter((it) => it.status !== "void");
+    const total_stake = live.reduce((a, it) => a + it.stake, 0);
+    const potential = live.reduce((a, it) => a + it.stake * it.odds, 0);
+    const graded = recomputeBet({ ...b, items }, results);
+    await db.updateBet(betId, { items: graded.items, status: graded.status, payout: graded.payout, total_stake, potential });
+    await refresh();
+  };
+
   const saveConfig = async (matchNo, config) => { await db.saveConfig(matchNo, config, session.user.id); await refresh(); };
   const saveConfigMany = async (rows) => { await db.saveConfigMany(rows, session.user.id); await refresh(); };
   const creditPlayer = async (player, addDeposit, addBonus, note) => {
@@ -951,7 +972,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl overflow-x-hidden px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} voidPick={voidPick} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} myBets={myMatchBets} />}
@@ -2043,12 +2064,14 @@ function BetCard({ b }) {
             <div key={it.selId + it.matchId} className="flex items-center justify-between text-xs">
               <div className="min-w-0">
                 <span className="text-stone-500">{it.marketTitle}: </span>
-                <span className="font-medium">{selDisplay(it)}</span>
+                <span className={`font-medium ${it.status === "void" ? "text-stone-500 line-through" : ""}`}>{selDisplay(it)}</span>
+                {it.status === "void" && <span className="ml-1 text-[10px] text-stone-500">— voided{it.voidReason ? `: ${it.voidReason}` : ""} (stake refunded)</span>}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className="text-emerald-300">@{it.oddsStr}</span>
+                <span className={it.status === "void" ? "text-stone-600 line-through" : "text-emerald-300"}>@{it.oddsStr}</span>
                 {it.status === "won" && <Check className="h-3.5 w-3.5 text-emerald-400" />}
                 {it.status === "lost" && <X className="h-3.5 w-3.5 text-rose-400" />}
+                {it.status === "void" && <span className="rounded bg-stone-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-stone-300">void</span>}
               </div>
             </div>
           ))}
@@ -2108,8 +2131,8 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, saveConfigMany, creditPlayer, creditPlayerOg, showToast }) {
-  const [mode, setMode] = useState("settle"); // settle | manage | outrights | players
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, saveConfigMany, voidPick, creditPlayer, creditPlayerOg, showToast }) {
+  const [mode, setMode] = useState("settle"); // settle | manage | outrights | players | void
   const [quick, setQuick] = useState(false);
   const [pick, setPick] = useState(null);
   const switchMode = (m) => { setMode(m); setPick(null); setQuick(false); };
@@ -2135,6 +2158,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
     outrights: [["Players", nPlayers], ["Outright Entries", o.n], ["Outright Stakes", money(o.stake)], ["Outright Payouts", money(o.payout), true], ["Winners Declared", results[-1] ? "Yes" : "No"], ["Outright Pool P/L", money(pl(o)), pl(o) >= 0]],
     fantasy: [["Players", nPlayers], ["Fantasy Entries", f.n], ["Fantasy Stakes", money(f.stake)], ["Fantasy Payouts", money(f.payout), true], ["Settled Matchdays", `${settledFmMd}/9`], ["Fantasy Pool P/L", money(pl(f)), pl(f) >= 0]],
     players: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Settled Matches", `${settledMatches}/72`], ["Settled Fantasy MDs", `${settledFmMd}/9`], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
+    void: [["Players", nPlayers], ["Total Slips", all.n], ["Open Slips", bets.filter((b) => b.status === "open").length], ["Voided Picks", bets.reduce((a, b) => a + b.items.filter((it) => it.status === "void").length, 0)]],
   };
   const stats = STAT[mode] || STAT.settle;
   const showMatchExport = mode === "settle" || mode === "manage";
@@ -2167,8 +2191,8 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-5 gap-1.5 rounded-xl bg-black/30 p-1">
-        {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["fantasy", "Fantasy", Users], ["players", "Coins", Wallet]].map(([k, lbl, Icon]) => (
+      <div className="mb-4 grid grid-cols-6 gap-1.5 rounded-xl bg-black/30 p-1">
+        {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["fantasy", "Fantasy", Users], ["players", "Coins", Wallet], ["void", "Void", Ban]].map(([k, lbl, Icon]) => (
           <button key={k} onClick={() => switchMode(k)}
             className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[10px] font-semibold transition ${mode === k ? "bg-gradient-to-r from-amber-400 to-emerald-400 text-black" : "text-stone-400"}`}>
             <Icon className="h-4 w-4" /> {lbl}
@@ -2207,8 +2231,102 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         <OutrightAdmin config={configs[-1]} result={results[-1]} bets={bets} txns={txns} saveConfig={saveConfig} settleOutright={settleOutright} resetOutright={resetOutright} showToast={showToast} />
       ) : mode === "fantasy" ? (
         <FantasyAdmin config={configs[-2]} results={results} bets={bets} saveConfig={saveConfig} settleFantasy={settleFantasy} resetFantasy={resetFantasy} showToast={showToast} />
+      ) : mode === "void" ? (
+        <VoidPanel bets={bets} voidPick={voidPick} showToast={showToast} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} resetAll={resetAll} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+/* ---------- Admin: void a single pick (refund + exclude from settlement) ---------- */
+function VoidPanel({ bets, voidPick, showToast }) {
+  const [q, setQ] = useState("");
+  const [confirm, setConfirm] = useState(null); // { betId, selId, matchId, label, code, player }
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const matchBets = useMemo(() =>
+    (bets || []).filter((b) => (b.kind || "match") === "match")
+      .filter((b) => (b.user + " " + b.code).toLowerCase().includes(q.trim().toLowerCase()))
+      .sort((a, b) => new Date(b.ts) - new Date(a.ts)), [bets, q]);
+
+  const doVoid = async () => {
+    if (!confirm) return;
+    if (!reason.trim()) { showToast("Enter a reason for the void", "err"); return; }
+    setBusy(true);
+    try {
+      await voidPick(confirm.betId, confirm.selId, confirm.matchId, reason.trim());
+      showToast(`Voided “${confirm.label}” — stake refunded`);
+      setConfirm(null); setReason("");
+    } catch (e) { showToast(e.message || "Void failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <SectionTitle icon={<Ban className="h-5 w-5" />} title="Void a Pick" sub="Cancel one selection — its stake is refunded and it's left out of settlement" />
+      <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[12px] text-stone-300">
+        Voiding refunds that pick's stake to the player's wallet and removes it from grading. The rest of the slip is unaffected. Works before or after a match is settled — the remaining picks are re-graded. This can't be undone, so add a clear reason.
+      </div>
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by player or slip code…"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
+      </div>
+
+      <div className="space-y-2.5 pb-6">
+        {matchBets.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No slips match your search.</p>}
+        {matchBets.map((b) => (
+          <div key={b.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold">👤 {b.user}</div>
+                <div className="font-mono text-[11px] text-stone-500">{b.code} · {new Date(b.ts).toLocaleString()}</div>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${b.status === "won" ? "bg-emerald-500/15 text-emerald-300" : b.status === "lost" ? "bg-rose-500/15 text-rose-300" : b.status === "void" ? "bg-stone-500/20 text-stone-300" : "bg-sky-500/15 text-sky-300"}`}>{b.status}</span>
+            </div>
+            <div className="space-y-1.5">
+              {b.items.map((it) => (
+                <div key={it.selId + it.matchId} className="flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-stone-500">{matchName(it.matchId)} · {it.marketTitle}</div>
+                    <div className={`truncate font-medium ${it.status === "void" ? "text-stone-500 line-through" : ""}`}>{selDisplay(it)} <span className="text-emerald-300">@{it.oddsStr}</span> · {money(it.stake)}</div>
+                    {it.status === "void" && <div className="text-[10px] text-stone-500">voided{it.voidReason ? `: ${it.voidReason}` : ""}{it.voidedBy ? ` · by ${it.voidedBy}` : ""}</div>}
+                  </div>
+                  {it.status === "void" ? (
+                    <span className="shrink-0 rounded bg-stone-500/20 px-2 py-1 text-[9px] font-bold uppercase text-stone-300">void</span>
+                  ) : (
+                    <button onClick={() => { setConfirm({ betId: b.id, selId: it.selId, matchId: it.matchId, label: `${it.marketTitle}: ${selDisplay(it)}`, code: b.code, player: b.user }); setReason(""); }}
+                      className="shrink-0 rounded-lg bg-rose-500/15 px-3 py-1.5 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/25">Void</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {confirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={() => !busy && setConfirm(null)}>
+          <div className="w-full max-w-sm rounded-3xl border border-rose-400/30 bg-[#0a1311] p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center gap-2 font-display text-2xl text-white"><Ban className="h-5 w-5 text-rose-300" /> Void this pick?</div>
+            <div className="mb-3 rounded-xl bg-black/30 p-3 text-xs">
+              <div className="text-stone-400">{confirm.player} · {confirm.code}</div>
+              <div className="mt-1 font-semibold text-stone-100">{confirm.label}</div>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-stone-400">Reason (required — shown in the player's slip &amp; records)</span>
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="e.g. Entered a listed score in Any Other Score by mistake"
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-rose-400/60" />
+            </label>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => setConfirm(null)} disabled={busy} className="flex-1 rounded-xl bg-white/5 py-2.5 text-sm font-semibold text-stone-300">Cancel</button>
+              <button onClick={doVoid} disabled={busy || !reason.trim()} className="flex-1 rounded-xl bg-rose-500 py-2.5 text-sm font-bold text-white disabled:opacity-50">{busy ? "Voiding…" : "Confirm void"}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
