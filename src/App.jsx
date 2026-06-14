@@ -259,6 +259,12 @@ const db = {
       .upsert({ match_no: matchNo, config, updated_by: userId, updated_at: new Date().toISOString() });
     if (error) throw error;
   },
+  async saveConfigMany(rows, userId) {
+    if (!rows.length) return;
+    const payload = rows.map((r) => ({ match_no: r.matchNo, config: r.config, updated_by: userId, updated_at: new Date().toISOString() }));
+    const { error } = await supabase.from("match_config").upsert(payload);
+    if (error) throw error;
+  },
   async fetchProfiles() {
     const { data, error } = await supabase.from("profiles").select("id,nickname,full_name,is_admin,deposit,bonus,og_deposit,og_bonus");
     if (error) throw error;
@@ -814,6 +820,7 @@ export default function App() {
 
   const placeBet = async (bet) => { await db.insertBet(bet, session.user.id); await refresh(); };
   const saveConfig = async (matchNo, config) => { await db.saveConfig(matchNo, config, session.user.id); await refresh(); };
+  const saveConfigMany = async (rows) => { await db.saveConfigMany(rows, session.user.id); await refresh(); };
   const creditPlayer = async (player, addDeposit, addBonus, note) => {
     await db.creditPlayer(player.id, Number(player.deposit || 0) + addDeposit, Number(player.bonus || 0) + addBonus);
     await db.addTransaction({ user_id: player.id, nickname: player.nickname, deposit: addDeposit, bonus: addBonus, kind: "match", note }, session.user.id);
@@ -907,7 +914,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl overflow-x-hidden px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} myBets={myMatchBets} />}
@@ -2062,10 +2069,11 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, creditPlayer, creditPlayerOg, showToast }) {
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, saveConfigMany, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players
+  const [quick, setQuick] = useState(false);
   const [pick, setPick] = useState(null);
-  const switchMode = (m) => { setMode(m); setPick(null); };
+  const switchMode = (m) => { setMode(m); setPick(null); setQuick(false); };
 
   // ----- per-tab summary stats -----
   const nPlayers = players.filter((p) => !p.is_admin).length;
@@ -2141,10 +2149,19 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
       ) : mode === "manage" ? (
         <>
           <SectionTitle icon={<ListChecks className="h-5 w-5" />} title="Odds & Players" sub="Set player names and adjust odds per match — saved for everyone" />
-          {!pick ? (
-            <MatchPicker results={results} configs={configs} onPick={setPick} manage />
-          ) : (
+          {pick ? (
             <ManageForm match={pick} config={configs[pick.n]} onBack={() => setPick(null)} saveConfig={saveConfig} showToast={showToast} />
+          ) : quick ? (
+            <QuickOdds configs={configs} results={results} saveConfigMany={saveConfigMany} showToast={showToast}
+              onClose={() => setQuick(false)} onOpenFull={(m) => { setQuick(false); setPick(m); }} />
+          ) : (
+            <>
+              <button onClick={() => setQuick(true)}
+                className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 text-sm font-bold text-black">
+                ⚡ Quick 1X2 + Live — set all 72 matches in one screen
+              </button>
+              <MatchPicker results={results} configs={configs} onPick={setPick} manage />
+            </>
           )}
         </>
       ) : mode === "outrights" ? (
@@ -2342,6 +2359,7 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
   const [openCat, setOpenCat] = useState(null);
   const [confirm, setConfirm] = useState(null); // { mid, label }
   const [winnerSel, setWinnerSel] = useState({}); // catKey -> selId chosen in dropdown
+  const [sec, setSec] = useState({}); // collapsible admin sections
 
   const fmBets = useMemo(() => (bets || []).filter((b) => b.kind === "fantasy"), [bets]);
 
@@ -2395,15 +2413,19 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
         </button>
       </div>
 
-      {/* Managers list */}
-      <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-sm font-bold">👔 Managers</div>
-          <button onClick={addManager} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">
-            <Plus className="h-3.5 w-3.5" /> Add Manager
+      {/* Managers */}
+      <div className="mb-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button onClick={() => setSec((x) => ({ ...x, managers: !x.managers }))} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+          <span>👔 Managers <span className="text-[11px] font-normal text-stone-500">({liveManagers.length})</span></span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${sec.managers ? "rotate-90" : ""}`} />
+        </button>
+        {sec.managers && (<div className="border-t border-white/5 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[11px] text-stone-500">Add or remove managers. Odds set per matchday below.</p>
+          <button onClick={addManager} className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">
+            <Plus className="h-3.5 w-3.5" /> Add
           </button>
         </div>
-        <p className="mb-2 text-[11px] text-stone-500">Add or remove managers. Odds for each are set per matchday below.</p>
         <div className="space-y-2">
           {managers.map((m, i) => (
             <div key={m.id} className="flex items-center gap-2">
@@ -2413,12 +2435,18 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
             </div>
           ))}
         </div>
+        </div>)}
       </div>
 
       {/* Go live & locks */}
-      <div className="mb-2 text-sm font-bold">Go live &amp; picks lock</div>
-      <p className="mb-2 text-[11px] text-stone-500">Players only see matchdays you set <b>Live</b>. Set <b>Locked</b> to stop new picks (e.g. at kickoff) without settling. Saved instantly.</p>
-      <div className="mb-4 space-y-1.5">
+      <div className="mb-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button onClick={() => setSec((x) => ({ ...x, live: !x.live }))} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+          <span>📡 Go live &amp; picks lock</span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${sec.live ? "rotate-90" : ""}`} />
+        </button>
+        {sec.live && (<div className="border-t border-white/5 p-3">
+        <p className="mb-2 text-[11px] text-stone-500">Players only see matchdays you set <b>Live</b>. Set <b>Locked</b> to stop new picks (e.g. at kickoff) without settling. Saved instantly.</p>
+        <div className="space-y-1.5">
         {FM_CATS.map((cat) => {
           const settled = results[cat.mid];
           return (
@@ -2438,11 +2466,18 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
             </div>
           );
         })}
+        </div>
+        </div>)}
       </div>
 
       {/* Odds per matchday */}
-      <div className="mb-2 text-sm font-bold">Odds per matchday</div>
-      <div className="space-y-2">
+      <div className="mb-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button onClick={() => setSec((x) => ({ ...x, odds: !x.odds }))} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+          <span>🎲 Odds per matchday</span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${sec.odds ? "rotate-90" : ""}`} />
+        </button>
+        {sec.odds && (<div className="border-t border-white/5 p-3">
+        <div className="space-y-2">
         {FM_CATS.map((cat) => {
           const open = openCat === cat.key;
           return (
@@ -2467,14 +2502,23 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
             </div>
           );
         })}
+        </div>
+        </div>)}
       </div>
-      <button onClick={saveSetup} disabled={busy} className="mt-3 w-full rounded-xl bg-white/10 py-3 font-bold text-emerald-300 disabled:opacity-50">
+
+      <button onClick={saveSetup} disabled={busy} className="mt-1 mb-2 w-full rounded-xl bg-white/10 py-3 font-bold text-emerald-300 disabled:opacity-50">
         {busy ? "Saving…" : "Save Managers & Odds"}
       </button>
 
       {/* Settle per matchday */}
-      <div className="mt-6 mb-2 text-sm font-bold">Settle winners (pays out from match wallet)</div>
-      <div className="space-y-2">
+      <div className="mb-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button onClick={() => setSec((x) => ({ ...x, settle: !x.settle }))} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+          <span>🏁 Settle winners</span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${sec.settle ? "rotate-90" : ""}`} />
+        </button>
+        {sec.settle && (<div className="border-t border-white/5 p-3">
+        <p className="mb-2 text-[11px] text-stone-500">Settling pays out winning picks from the match wallet.</p>
+        <div className="space-y-2">
         {FM_CATS.map((cat) => {
           const settled = results[cat.mid];
           const settledName = settled ? (liveManagers.find((m) => `${cat.key}__${m.id}` === settled.fmWinner)?.name || "set") : null;
@@ -2508,6 +2552,8 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
             </div>
           );
         })}
+        </div>
+        </div>)}
       </div>
     </div>
   );
@@ -2915,6 +2961,144 @@ function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, b
 }
 
 /* ---------- Manage odds & players (admin) ---------- */
+/* ---------- Admin: one-screen 1X2 + Live for every match ---------- */
+const QO_DEF = { h: "2/1", d: "9/4", a: "5/2" }; // built-in Match Result defaults
+function QuickOdds({ configs, results, saveConfigMany, showToast, onClose, onOpenFull }) {
+  const eff = (n) => {
+    const o = configs?.[n]?.odds?.match_result || {};
+    return { h: o.h || QO_DEF.h, d: o.d || QO_DEF.d, a: o.a || QO_DEF.a, live: !!configs?.[n]?.live };
+  };
+  const seed = useMemo(() => Object.fromEntries(FIXTURES.map((m) => [m.n, eff(m.n)])), []); // once
+  const [rows, setRows] = useState(seed);
+  const [saved, setSaved] = useState(seed); // last-saved snapshot
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const set = (n, field, val) => setRows((r) => ({ ...r, [n]: { ...r[n], [field]: val } }));
+  const changed = (n) => {
+    const a = saved[n], b = rows[n];
+    return a.h !== b.h || a.d !== b.d || a.a !== b.a || a.live !== b.live;
+  };
+  const changedMatches = FIXTURES.filter((m) => changed(m.n));
+  const liveCount = FIXTURES.filter((m) => rows[m.n].live && !results[m.n]).length;
+
+  const setAllLive = (val) => setRows((r) => {
+    const next = { ...r };
+    FIXTURES.forEach((m) => { if (!results[m.n]) next[m.n] = { ...next[m.n], live: val }; });
+    return next;
+  });
+
+  const saveAll = async () => {
+    if (!changedMatches.length) return;
+    setBusy(true);
+    try {
+      const payload = changedMatches.map((m) => {
+        const c = rows[m.n];
+        const base = configs?.[m.n] || {};
+        return {
+          matchNo: m.n,
+          config: {
+            ...base,
+            odds: { ...(base.odds || {}), match_result: { h: c.h || QO_DEF.h, d: c.d || QO_DEF.d, a: c.a || QO_DEF.a } },
+            live: c.live,
+          },
+        };
+      });
+      await saveConfigMany(payload);
+      setSaved(JSON.parse(JSON.stringify(rows)));
+      showToast(`Saved ${payload.length} match${payload.length === 1 ? "" : "es"}`);
+    } catch (e) { showToast(e.message || "Save failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+
+  const list = FIXTURES.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
+  const grouped = {};
+  list.forEach((m) => { (grouped[m.date] ||= []).push(m); });
+
+  return (
+    <div>
+      <button onClick={onClose} className="mb-3 inline-flex items-center gap-1 text-sm text-stone-400 hover:text-emerald-300">
+        <ChevronLeft className="h-4 w-4" /> Back to per-match editor
+      </button>
+
+      <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[12px] text-stone-300">
+        Set <b>Home / Draw / Away</b> odds (e.g. <span className="text-emerald-300">2/1</span>) and flip each match <b>Live</b> for players. The other 10 markets use their built-in defaults automatically — you only need to touch these. Nothing is saved until you tap <b>Save changes</b>.
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button onClick={() => setAllLive(true)} className="rounded-lg bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">Go live: all</button>
+        <button onClick={() => setAllLive(false)} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-300 hover:bg-white/10">All to draft</button>
+        <span className="ml-auto rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-stone-300">{liveCount} live · {changedMatches.length} unsaved</span>
+      </div>
+
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a team…"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
+      </div>
+
+      <div className="space-y-4 pb-24">
+        {Object.entries(grouped).map(([date, ms]) => (
+          <div key={date}>
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-400/70">
+              <span className="h-px flex-1 bg-white/5" />{date}<span className="h-px flex-1 bg-white/5" />
+            </div>
+            <div className="space-y-2">
+              {ms.map((m) => {
+                const c = rows[m.n];
+                const settled = results[m.n];
+                const isCh = changed(m.n);
+                return (
+                  <div key={m.n} className={`rounded-xl border p-2.5 ${isCh ? "border-amber-400/60 bg-amber-400/[0.06]" : "border-white/10 bg-white/[0.03]"}`}>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <button onClick={() => onOpenFull(m)} className="min-w-0 flex-1 text-left">
+                        <div className="flex items-center gap-1.5 text-[10px] text-stone-500">
+                          <Clock className="h-3 w-3" /> {m.day} · {m.time}
+                          {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-300">SETTLED {settled.ft.h}–{settled.ft.a}</span>}
+                          {isCh && !settled && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">unsaved</span>}
+                        </div>
+                        <div className="truncate text-sm font-semibold">
+                          {m.hf} {m.home} <span className="text-stone-600">v</span> {m.af} {m.away}
+                        </div>
+                      </button>
+                      <button onClick={() => set(m.n, "live", !c.live)} disabled={!!settled}
+                        className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${c.live ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>
+                        {c.live ? "Live" : "Draft"}
+                      </button>
+                    </div>
+                    <div className="flex items-end gap-1.5">
+                      <QOCell label="Home" v={c.h} onChange={(x) => set(m.n, "h", x)} disabled={!!settled} />
+                      <QOCell label="Draw" v={c.d} onChange={(x) => set(m.n, "d", x)} disabled={!!settled} />
+                      <QOCell label="Away" v={c.a} onChange={(x) => set(m.n, "a", x)} disabled={!!settled} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {list.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No matches match “{q}”.</p>}
+      </div>
+
+      <div className="fixed inset-x-0 bottom-16 z-40 mx-auto max-w-5xl px-4">
+        <button onClick={saveAll} disabled={busy || !changedMatches.length}
+          className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 font-bold text-black shadow-2xl disabled:opacity-40">
+          {busy ? "Saving…" : changedMatches.length ? `Save changes (${changedMatches.length})` : "No unsaved changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+function QOCell({ label, v, onChange, disabled }) {
+  return (
+    <label className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className="text-[9px] font-semibold uppercase tracking-wide text-stone-500">{label}</span>
+      <input value={v} onChange={(e) => onChange(e.target.value)} placeholder="2/1" disabled={disabled} inputMode="text"
+        className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-center text-sm font-semibold tabular-nums outline-none focus:border-emerald-400/50 disabled:opacity-40" />
+    </label>
+  );
+}
+
 function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const seedPlayers = (side, team) =>
     (config?.players?.[side]?.length ? config.players[side] : defaultPlayers(team, side)).map((p) => ({ ...p }));
