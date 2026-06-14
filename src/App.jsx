@@ -1345,11 +1345,18 @@ function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], showTo
 
   const totalStake = slip.reduce((a, s) => a + s.stake, 0);
   const potential = slip.reduce((a, s) => a + s.stake * s.odds, 0);
-  const categories = new Set(slip.map((s) => s.marketKey)).size;
+  // minimum-categories rule is per match, and counts the player's earlier picks for that match too
+  const catsByMatch = {};
+  (myBets || []).forEach((b) => b.items.forEach((it) => { (catsByMatch[it.matchId] ||= new Set()).add(it.marketKey); }));
+  slip.forEach((s) => { (catsByMatch[s.matchId] ||= new Set()).add(s.marketKey); });
+  const unmetMatches = [...new Set(slip.map((s) => s.matchId))].filter((mid) => (catsByMatch[mid]?.size || 0) < RULES.minCategories);
 
   const validate = () => {
     if (slip.length === 0) return "Your slip is empty";
-    if (categories < RULES.minCategories) return `Pick at least ${RULES.minCategories} categories`;
+    if (unmetMatches.length) {
+      const f = FIXTURES.find((x) => x.n === unmetMatches[0]);
+      return `Pick at least ${RULES.minCategories} categories for ${f ? `${f.home} v ${f.away}` : "this match"} (your earlier picks count too) to submit`;
+    }
     for (const s of slip) {
       if (s.stake < RULES.min) return `Min stake is ${money(RULES.min)} per selection`;
       if (s.stake > RULES.max) return `Max stake is ${money(RULES.max)} per selection`;
@@ -1471,7 +1478,7 @@ function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], showTo
             </div>
             <div className="border-t border-white/10 bg-black/20 p-4">
               <div className="mb-3 space-y-1 text-sm">
-                <Row k="Categories" v={`${categories} / min ${RULES.minCategories}`} />
+                <Row k="Per-match minimum" v={unmetMatches.length ? `Need ${RULES.minCategories} categories in ${unmetMatches.length} match${unmetMatches.length > 1 ? "es" : ""}` : `✓ ${RULES.minCategories}+ categories per match`} />
                 <Row k="Available" v={money(available)} />
                 <Row k="Total Stake" v={money(totalStake)} />
                 <Row k="Potential Return" v={money(potential)} hi />
