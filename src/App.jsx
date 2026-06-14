@@ -1430,19 +1430,24 @@ function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], config
       const dup = otherDuplicateMsg(s, configs);
       if (dup) return dup;
     }
-    // cap: total stake per match + category (this slip + already-submitted slips) must not exceed the max
+    // cap: total stake per match + category (this slip + already-submitted slips) must not exceed the max.
+    // Exception — CUSTOM match specials: each custom special is its own bucket, so a player may back
+    // several of them at up to the max each (e.g. Player A to score 1000 AND Player B to score 1000).
+    const capKey = (it) => it.matchId + "|" + it.marketKey + (it.meta?.sp === "custom" ? "|" + it.selId : "");
     const submitted = {};
     (myBets || []).forEach((b) => b.items.forEach((it) => {
-      const k = it.matchId + "|" + it.marketKey;
+      const k = capKey(it);
       submitted[k] = (submitted[k] || 0) + it.stake;
     }));
     const current = {};
-    slip.forEach((s) => { const k = s.matchId + "|" + s.marketKey; current[k] = (current[k] || 0) + s.stake; });
+    slip.forEach((s) => { const k = capKey(s); current[k] = (current[k] || 0) + s.stake; });
     for (const k of Object.keys(current)) {
       const total = current[k] + (submitted[k] || 0);
       if (total > RULES.max) {
-        const s = slip.find((x) => x.matchId + "|" + x.marketKey === k);
-        return `${s.marketTitle} on ${s.match}: total stake across your slips is ${money(total)} — max is ${money(RULES.max)} per category, per match`;
+        const s = slip.find((x) => capKey(x) === k);
+        const where = s.meta?.sp === "custom" ? `“${s.label}” on ${s.match}` : `${s.marketTitle} on ${s.match}`;
+        const scope = s.meta?.sp === "custom" ? "per special, per match" : "per category, per match";
+        return `${where}: total stake across your slips is ${money(total)} — max is ${money(RULES.max)} ${scope}`;
       }
     }
     const lockedMatch = [...new Set(slip.map((s) => s.matchId))]
