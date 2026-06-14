@@ -418,6 +418,39 @@ function knownScorerNames(m, cfg = {}) {
     .map((s) => s.meta.scorer.trim().toLowerCase());
 }
 
+// explicitly listed correct-score lines for a match — used so "Any Other Score" settles correctly
+// (a typed score that IS listed is not "other", so it must not win at the catch-all odds)
+function knownScoreLines(m, cfg = {}) {
+  const mk = buildMarkets(m, cfg);
+  const grab = (key, field) => (mk.find((x) => x.key === key)?.selections || [])
+    .map((s) => s.meta?.[field]).filter((v) => v && v !== "__OTHER__").map((v) => String(v).replace(/\s/g, ""));
+  return { ht: grab("ht_score", "ht"), ft: grab("ft_score", "ft") };
+}
+
+// stop a player from entering an outcome in an "Other" box when it's already a listed option
+// (that listed option has its own — usually shorter — odds). Returns a message, or null if fine.
+function otherDuplicateMsg(s, configs) {
+  const m = FIXTURES.find((f) => f.n === s.matchId);
+  if (!m) return null;
+  const mkts = buildMarkets(m, configs?.[s.matchId] || {});
+  const mk = mkts.find((x) => x.key === s.marketKey);
+  if (!mk) return null;
+  if (s.meta?.scorer === "__OTHER__") {
+    const cn = (s.customName || "").trim().toLowerCase();
+    if (!cn) return null;
+    const hit = mk.selections.find((x) => x.meta?.scorer && x.meta.scorer !== "__OTHER__" && x.meta.scorer.trim().toLowerCase() === cn);
+    if (hit) return `${hit.meta.scorer} is already listed at ${hit.oddsStr} in ${mk.title} — pick that option instead of “Other Player”.`;
+  }
+  if (s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") {
+    const field = s.meta?.ht === "__OTHER__" ? "ht" : "ft";
+    const cn = (s.customName || "").replace(/\s/g, "");
+    if (!cn) return null;
+    const hit = mk.selections.find((x) => x.meta?.[field] && x.meta[field] !== "__OTHER__" && String(x.meta[field]).replace(/\s/g, "") === cn);
+    if (hit) return `“${hit.label}” is already listed at ${hit.oddsStr} in ${mk.title} — pick that option instead of “Any Other Score”.`;
+  }
+  return null;
+}
+
 /* ---------- settlement engine ---------- */
 function evaluateItem(item, R) {
   const { marketKey, meta } = item;
@@ -442,7 +475,8 @@ function evaluateItem(item, R) {
       const known = R.knownScorers || [];
       if (meta.scorer === "__OTHER__") {
         const cn = (item.customName || "").trim().toLowerCase();
-        return cn ? first === cn : (!!first && !known.includes(first));
+        // "Other Player" only covers players NOT explicitly listed in this match
+        return cn ? (first === cn && !known.includes(cn)) : (!!first && !known.includes(first));
       }
       return first === stripPlayer(meta.scorer);
     }
@@ -451,7 +485,7 @@ function evaluateItem(item, R) {
       const known = R.knownScorers || [];
       if (meta.scorer === "__OTHER__") {
         const cn = (item.customName || "").trim().toLowerCase();
-        return cn ? all.includes(cn) : all.some((s) => s && !known.includes(s));
+        return cn ? (all.includes(cn) && !known.includes(cn)) : all.some((s) => s && !known.includes(s));
       }
       return all.includes(stripPlayer(meta.scorer));
     }
@@ -459,7 +493,8 @@ function evaluateItem(item, R) {
       const s = `${htH}-${htA}`;
       if (meta.ht === "__OTHER__") {
         const cn = (item.customName || "").replace(/\s/g, "");
-        if (cn) return cn === s; // typed score must match exactly
+        const knownHt = R.knownHtScores || [];
+        if (cn) return cn === s && !knownHt.includes(cn); // typed score must match AND not be a listed line
         return ![ "1-0","2-0","2-1","0-0","1-1","0-1","0-2" ].includes(s); // legacy fallback
       }
       return meta.ht === s;
@@ -468,7 +503,8 @@ function evaluateItem(item, R) {
       const s = `${ftH}-${ftA}`;
       if (meta.ft === "__OTHER__") {
         const cn = (item.customName || "").replace(/\s/g, "");
-        if (cn) return cn === s;
+        const knownFt = R.knownFtScores || [];
+        if (cn) return cn === s && !knownFt.includes(cn);
         return ![ "1-0","2-0","2-1","3-1","0-0","1-1","2-2","0-1","1-2" ].includes(s);
       }
       return meta.ft === s;
@@ -834,7 +870,8 @@ export default function App() {
 
   const settleMatch = async (matchNo, R0) => {
     const match = FIXTURES.find((f) => f.n === matchNo);
-    const R = { ...R0, knownScorers: knownScorerNames(match, configs[matchNo]) };
+    const lines = knownScoreLines(match, configs[matchNo]);
+    const R = { ...R0, knownScorers: knownScorerNames(match, configs[matchNo]), knownHtScores: lines.ht, knownFtScores: lines.ft };
     await db.upsertResult(matchNo, R, session.user.id);
     const newResults = { ...results, [matchNo]: R };
     const affected = bets.filter((b) => b.kind !== "outright" && b.items.some((it) => it.matchId === matchNo));
@@ -931,7 +968,7 @@ export default function App() {
 
           {role === "player" && (
             <>
-              <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} myBets={myMatchBets} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
+              <BetSlip slip={slip} setSlip={setSlip} user={user} placeBet={placeBet} available={wallet.net} myBets={myMatchBets} configs={configs} showToast={showToast} setTab={setTab} setActiveMatch={setActiveMatch} />
               {tab === "outrights" && <OutrightSlip slip={ogSlip} setSlip={setOgSlip} user={user} placeBet={placeBet} available={ogWallet.net} myBets={myOgBets} now={now} showToast={showToast} setTab={setTab} />}
               {tab === "fantasy" && <FantasySlip slip={fmSlip} setSlip={setFmSlip} user={user} placeBet={placeBet} available={wallet.net} myBets={myFantasyBets} showToast={showToast} setTab={setTab} />}
               <BottomNav tab={tab} setTab={(t) => { setTab(t); setActiveMatch(null); }} slipCount={slip.length} ogCount={ogSlip.length} fmCount={fmSlip.length} />
@@ -1338,7 +1375,7 @@ function MarketCard({ mk, inSlip, toggle, disabled }) {
 }
 
 /* ---------- Pick slip ---------- */
-function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], showToast, setTab, setActiveMatch }) {
+function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], configs = {}, showToast, setTab, setActiveMatch }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [placed, setPlaced] = useState(null);
@@ -1369,6 +1406,8 @@ function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], showTo
       if (s.stake > RULES.max) return `Max stake is ${money(RULES.max)} per selection`;
       if (s.meta?.scorer === "__OTHER__" && !(s.customName || "").trim()) return "Choose the player for your “Other Player” pick";
       if ((s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && !(s.customName || "").trim()) return "Type the score for your “Other Score” pick";
+      const dup = otherDuplicateMsg(s, configs);
+      if (dup) return dup;
     }
     // cap: total stake per match + category (this slip + already-submitted slips) must not exceed the max
     const submitted = {};
