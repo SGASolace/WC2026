@@ -2613,37 +2613,52 @@ function CreditBlock({ title, color, wallet, onCredit, onExtract, showToast, bon
 function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerOg, showToast }) {
   const w = walletOf(p, myBets);
   const og = walletOg(p, myOgBets);
+  const [open, setOpen] = useState(false);
   const [showHist, setShowHist] = useState(false);
+  const compact = (n) => Math.round(n).toLocaleString();
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <div className="mb-3 text-sm font-bold">👤 {p.nickname} <span className="text-[11px] font-normal text-stone-500">{p.full_name}</span></div>
-
-      <CreditBlock title="Match wallet" color="text-emerald-300" wallet={w} showToast={showToast}
-        onCredit={(a, b, note) => creditPlayer(p, a, b, note).then(() => showToast(`Match +${money(a + b)} (${note}) → ${p.nickname}`))}
-        onExtract={(a, note) => creditPlayer(p, -a, 0, note).then(() => showToast(`Match −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
-
-      <div className="my-3 border-t border-white/5" />
-
-      <CreditBlock title="🏆 Outright wallet" color="text-amber-300" wallet={og} showToast={showToast} bonusEnabled={false}
-        onCredit={(a, b, note) => creditPlayerOg(p, a, b, note).then(() => showToast(`Outright +${money(a + b)} (${note}) → ${p.nickname}`))}
-        onExtract={(a, note) => creditPlayerOg(p, -a, 0, note).then(() => showToast(`Outright −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
-
-      <button onClick={() => setShowHist(!showHist)} className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-stone-400 hover:text-emerald-300">
-        <ChevronRight className={`h-3.5 w-3.5 transition ${showHist ? "rotate-90" : ""}`} /> Transaction history ({(myTxns || []).length})
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-2 text-left">
+        <span className="flex min-w-0 items-center gap-2">
+          <ChevronRight className={`h-4 w-4 shrink-0 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+          <span className="truncate text-sm font-bold">👤 {p.nickname} <span className="text-[11px] font-normal text-stone-500">{p.full_name}</span></span>
+        </span>
+        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-[11px]">
+          <span className="rounded bg-emerald-500/15 px-2 py-1 font-semibold text-emerald-300">Match {compact(w.net)}</span>
+          <span className="rounded bg-amber-500/15 px-2 py-1 font-semibold text-amber-300">Out {compact(og.net)}</span>
+        </span>
       </button>
-      {showHist && (
-        <div className="mt-2 space-y-1">
-          {(myTxns || []).length === 0 && <p className="text-[11px] text-stone-600">No transactions yet.</p>}
-          {(myTxns || []).map((t) => {
-            const total = Number(t.deposit) + Number(t.bonus);
-            return (
-              <div key={t.id} className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-1.5 text-[11px]">
-                <span className="text-stone-400">{new Date(t.created_at).toLocaleString()} <span className={t.kind === "outright" ? "text-amber-300" : "text-emerald-300"}>· {t.kind === "outright" ? "outright" : "match"}</span>{t.note ? <span className="text-stone-500"> · {t.note}</span> : ""}</span>
-                <span className={`font-semibold ${total >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{total >= 0 ? "+" : "−"}{fmtN(Math.abs(total))}</span>
-              </div>
-            );
-          })}
+
+      {open && (
+        <div className="mt-3">
+          <CreditBlock title="Match wallet" color="text-emerald-300" wallet={w} showToast={showToast}
+            onCredit={(a, b, note) => creditPlayer(p, a, b, note).then(() => showToast(`Match +${money(a + b)} (${note}) → ${p.nickname}`))}
+            onExtract={(a, note) => creditPlayer(p, -a, 0, note).then(() => showToast(`Match −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
+
+          <div className="my-3 border-t border-white/5" />
+
+          <CreditBlock title="🏆 Outright wallet" color="text-amber-300" wallet={og} showToast={showToast} bonusEnabled={false}
+            onCredit={(a, b, note) => creditPlayerOg(p, a, b, note).then(() => showToast(`Outright +${money(a + b)} (${note}) → ${p.nickname}`))}
+            onExtract={(a, note) => creditPlayerOg(p, -a, 0, note).then(() => showToast(`Outright −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
+
+          <button onClick={() => setShowHist(!showHist)} className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-stone-400 hover:text-emerald-300">
+            <ChevronRight className={`h-3.5 w-3.5 transition ${showHist ? "rotate-90" : ""}`} /> Transaction history ({(myTxns || []).length})
+          </button>
+          {showHist && (
+            <div className="mt-2 space-y-1">
+              {(myTxns || []).length === 0 && <p className="text-[11px] text-stone-600">No transactions yet.</p>}
+              {(myTxns || []).map((t) => {
+                const total = Number(t.deposit) + Number(t.bonus);
+                return (
+                  <div key={t.id} className="flex items-center justify-between rounded-lg bg-black/20 px-3 py-1.5 text-[11px]">
+                    <span className="text-stone-400">{new Date(t.created_at).toLocaleString()} <span className={t.kind === "outright" ? "text-amber-300" : "text-emerald-300"}>· {t.kind === "outright" ? "outright" : "match"}</span>{t.note ? <span className="text-stone-500"> · {t.note}</span> : ""}</span>
+                    <span className={`font-semibold ${total >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{total >= 0 ? "+" : "−"}{fmtN(Math.abs(total))}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
