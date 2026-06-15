@@ -2209,7 +2209,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         <>
           <SectionTitle icon={<Settings className="h-5 w-5" />} title="Result Settlement" sub="Enter outcomes — the engine settles every prediction automatically" />
           {!pick ? (
-            <MatchPicker results={results} onPick={setPick} bets={bets} />
+            <MatchPicker results={results} configs={configs} onPick={setPick} bets={bets} />
           ) : (
             <SettleForm match={pick} config={configs[pick.n]} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} resetMatch={resetMatch} bets={bets} showToast={showToast} />
           )}
@@ -2349,6 +2349,7 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
   const [winners, setWinners] = useState(() => ({ ...(result || {}) }));
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false); // 'settle' | 'reset' | false
+  const [sec, setSec] = useState({ settle: false, odds: false }); // collapsible sections
   const settled = !!result;
   const setOdd = (key, id, val) => setOdds((o) => ({ ...o, [key]: { ...(o[key] || {}), [id]: val } }));
   const addSel = (key, name, oddsStr) => setAdded((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_add_${uid()}`, label: name, oddsStr: oddsStr || "50/1" }] }));
@@ -2417,8 +2418,12 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
         </button>
       </div>
 
-      <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="mb-2 text-sm font-bold">Declare winners (settles & pays out)</div>
+      <div className="mb-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button onClick={() => setSec((s) => ({ ...s, settle: !s.settle }))} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+          <span>🏁 Declare winners {settled && <span className="ml-1 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">SETTLED</span>}</span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${sec.settle ? "rotate-90" : ""}`} />
+        </button>
+        {sec.settle && (<div className="border-t border-white/5 p-4">
         <div className="space-y-2">
           {markets.map((mk) => {
             if (mk.type === "total") {
@@ -2495,11 +2500,17 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
             </div>
           </div>
         )}
+        </div>)}
       </div>
 
-      <div className="mb-2 text-sm font-bold">Selections &amp; odds</div>
-      <p className="mb-2 text-[11px] text-stone-500">Edit odds, or <b>add / remove</b> teams &amp; players in the winner markets. The “Any other” catch-all always stays. Tap <b>Save</b> below to publish your changes.</p>
-      <div className="space-y-2">
+      <div className="mb-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button onClick={() => setSec((s) => ({ ...s, odds: !s.odds }))} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+          <span>🎲 Selections &amp; odds</span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${sec.odds ? "rotate-90" : ""}`} />
+        </button>
+        {sec.odds && (<div className="border-t border-white/5 p-4">
+        <p className="mb-2 text-[11px] text-stone-500">Edit odds, or <b>add / remove</b> teams &amp; players in the winner markets. The “Any other” catch-all always stays. Tap <b>Save</b> below to publish your changes.</p>
+        <div className="space-y-2">
         {markets.map((mk) => mk.type === "winner"
           ? <OutrightWinnerEditor key={mk.key} mk={mk} odds={odds} setOdd={setOdd} onAdd={addSel} onDelete={delSel} />
           : <OddsMarket key={mk.key} mk={mk} odds={odds} setOdd={setOdd} />)}
@@ -2507,6 +2518,8 @@ function OutrightAdmin({ config, result, bets, txns, saveConfig, settleOutright,
       <button onClick={saveOdds} disabled={busy} className="mt-4 w-full rounded-xl bg-white/10 py-3 font-bold text-emerald-300 disabled:opacity-50">
         {busy ? "Saving…" : "Save Outright Odds & Selections"}
       </button>
+        </div>)}
+      </div>
     </div>
   );
 }
@@ -2875,12 +2888,60 @@ function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerO
 
 function MatchPicker({ results, configs, onPick, manage, bets }) {
   const [q, setQ] = useState("");
-  const list = FIXTURES.filter((m) => (m.home + m.away).toLowerCase().includes(q.toLowerCase()));
+  const [open, setOpen] = useState({ live: true, draft: true, notset: true, settled: false });
   const matchBetsFor = (n) => (bets || [])
     .map((b) => ({ ...b, items: b.items.filter((it) => it.matchId === n) }))
     .filter((b) => b.items.length);
   const dlPDF = (m) => { const mb = matchBetsFor(m.n); if (!mb.length) return; printPicks(mb, `${m.home} v ${m.away} — Match Picks`, true); };
   const dlCSV = (m) => { const mb = matchBetsFor(m.n); if (!mb.length) return; exportPicksCSV(mb, `SGA_${m.home}_v_${m.away}_picks.csv`.replace(/\s+/g, "_"), true); };
+
+  const statusOf = (m) => {
+    if (results[m.n]) return "settled";
+    const cfg = configs?.[m.n];
+    if (cfg?.live) return "live";
+    if (cfg) return "draft";
+    return "notset";
+  };
+
+  const ql = q.trim().toLowerCase();
+  const sorted = [...FIXTURES]
+    .filter((m) => (m.home + m.away).toLowerCase().includes(ql))
+    .sort((a, b) => kickoffMs(a) - kickoffMs(b)); // chronological by kickoff
+  const groups = { live: [], draft: [], notset: [], settled: [] };
+  sorted.forEach((m) => groups[statusOf(m)].push(m));
+
+  const SECTIONS = [
+    ["live", "Live", "bg-sky-500/20 text-sky-300"],
+    ["draft", "Draft", "bg-amber-500/20 text-amber-300"],
+    ["notset", "Not set", "bg-white/10 text-stone-400"],
+    ["settled", "Settled", "bg-emerald-500/20 text-emerald-300"],
+  ];
+
+  const Row = (m) => {
+    const settled = results[m.n];
+    const picks = (bets || []).reduce((a, b) => a + b.items.filter((it) => it.matchId === m.n).length, 0);
+    return (
+      <div key={m.n} className="flex items-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
+        <button onClick={() => onPick(m)} className="min-w-0 flex-1 text-left hover:text-emerald-300">
+          <div className="truncate">{m.hf} {m.home} v {m.away} {m.af}</div>
+          <div className="text-[10px] text-stone-500">
+            {m.day} · {m.date.replace(/,?\s*20\d\d/, "")} · {m.time}
+            {settled && !manage ? ` · ${settled.ft.h}–${settled.ft.a}` : ""}
+          </div>
+        </button>
+        <span className="flex shrink-0 items-center gap-1">
+          {!manage && picks > 0 && (
+            <>
+              <button onClick={() => dlCSV(m)} title={`Excel — ${picks} picks`} className="rounded-md bg-white/5 p-1 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
+              <button onClick={() => dlPDF(m)} title={`PDF — ${picks} picks`} className="rounded-md bg-white/5 p-1 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
+            </>
+          )}
+          <button onClick={() => onPick(m)} className="text-stone-600 hover:text-emerald-400"><ChevronRight className="h-4 w-4" /></button>
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div>
       <div className="relative mb-3">
@@ -2888,30 +2949,26 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a team…"
           className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {list.map((m) => {
-          const settled = results[m.n];
-          const cfg = configs?.[m.n];
-          const picks = (bets || []).reduce((a, b) => a + b.items.filter((it) => it.matchId === m.n).length, 0);
+      <div className="space-y-2">
+        {SECTIONS.map(([key, label, badgeCls]) => {
+          const ms = groups[key];
+          const isOpen = ql ? ms.length > 0 : open[key]; // searching auto-expands non-empty groups
           return (
-            <div key={m.n} className="flex items-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
-              <button onClick={() => onPick(m)} className="min-w-0 flex-1 truncate text-left hover:text-emerald-300">
-                {m.hf} {m.home} v {m.away} {m.af}
+            <div key={key} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+              <button onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))} className="flex w-full items-center justify-between px-4 py-3 text-left">
+                <span className="flex items-center gap-2 text-sm font-bold">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${badgeCls}`}>{label}</span>
+                  <span className="text-stone-400">({ms.length})</span>
+                </span>
+                <ChevronRight className={`h-4 w-4 text-stone-500 transition ${isOpen ? "rotate-90" : ""}`} />
               </button>
-              <span className="flex shrink-0 items-center gap-1">
-                {settled && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">SETTLED{!manage ? ` ${settled.ft.h}–${settled.ft.a}` : ""}</span>}
-                {manage && (cfg?.live
-                  ? <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">LIVE</span>
-                  : cfg ? <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">DRAFT</span>
-                  : <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-stone-500">NOT SET</span>)}
-                {!manage && picks > 0 && (
-                  <>
-                    <button onClick={() => dlCSV(m)} title={`Excel — ${picks} picks`} className="rounded-md bg-white/5 p-1 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => dlPDF(m)} title={`PDF — ${picks} picks`} className="rounded-md bg-white/5 p-1 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
-                  </>
-                )}
-                <button onClick={() => onPick(m)} className="text-stone-600 hover:text-emerald-400"><ChevronRight className="h-4 w-4" /></button>
-              </span>
+              {isOpen && (
+                <div className="border-t border-white/5 p-3">
+                  {ms.length === 0
+                    ? <p className="py-2 text-center text-xs text-stone-600">None</p>
+                    : <div className="grid gap-2 sm:grid-cols-2">{ms.map(Row)}</div>}
+                </div>
+              )}
             </div>
           );
         })}
