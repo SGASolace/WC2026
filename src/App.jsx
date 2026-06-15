@@ -523,6 +523,7 @@ function evaluateItem(item, R) {
       return min >= meta.gt[0] && min <= meta.gt[1];
     }
     case "first_goal_method":
+      if (total === 0) return false; // no goal scored → there is no "first goal method", all picks lose
       return R.firstGoalMethod === meta.gm;
     case "total_cards": {
       const c = meta.c, cards = R.totalCards ?? 0;
@@ -3101,6 +3102,7 @@ function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, b
           <select value={r.firstGoalMethod} onChange={(e) => setR({ ...r, firstGoalMethod: e.target.value })} className={ipt}>
             <option value="rf">Right Foot</option><option value="lf">Left Foot</option><option value="head">Header</option><option value="og">Own Goal</option>
           </select>
+          {(r.ft.h + r.ft.a) === 0 && <p className="mt-1 text-[10px] text-amber-300/80">Full-Time is 0–0 — Method &amp; Time of First Goal picks all lose automatically (no goal). This field is ignored.</p>}
         </AdminField>
         <AdminField label="Total Cards (Y+R)">
           <input type="number" value={r.totalCards} onChange={(e) => setR({ ...r, totalCards: num(e.target.value) })} className={ipt} />
