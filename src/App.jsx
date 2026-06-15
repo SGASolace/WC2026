@@ -2237,7 +2237,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
       ) : mode === "fantasy" ? (
         <FantasyAdmin config={configs[-2]} results={results} bets={bets} saveConfig={saveConfig} settleFantasy={settleFantasy} resetFantasy={resetFantasy} showToast={showToast} />
       ) : mode === "void" ? (
-        <VoidPanel bets={bets} voidPick={voidPick} showToast={showToast} />
+        <VoidPanel bets={bets} results={results} configs={configs} voidPick={voidPick} showToast={showToast} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} resetAll={resetAll} showToast={showToast} />
       )}
@@ -2246,16 +2246,12 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
 }
 
 /* ---------- Admin: void a single pick (refund + exclude from settlement) ---------- */
-function VoidPanel({ bets, voidPick, showToast }) {
+function VoidPanel({ bets, results, configs, voidPick, showToast }) {
   const [q, setQ] = useState("");
+  const [open, setOpen] = useState({ live: true, draft: true, notset: true, settled: false });
   const [confirm, setConfirm] = useState(null); // { betId, selId, matchId, label, code, player }
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const matchBets = useMemo(() =>
-    (bets || []).filter((b) => (b.kind || "match") === "match")
-      .filter((b) => (b.user + " " + b.code).toLowerCase().includes(q.trim().toLowerCase()))
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts)), [bets, q]);
 
   const doVoid = async () => {
     if (!confirm) return;
@@ -2269,6 +2265,63 @@ function VoidPanel({ bets, voidPick, showToast }) {
     finally { setBusy(false); }
   };
 
+  const statusOf = (n) => {
+    if (results[n]) return "settled";
+    const cfg = configs?.[n];
+    if (cfg?.live) return "live";
+    if (cfg) return "draft";
+    return "notset";
+  };
+
+  const ql = q.trim().toLowerCase();
+  // every match pick, grouped by match
+  const picksByMatch = {};
+  (bets || []).filter((b) => (b.kind || "match") === "match")
+    .forEach((b) => b.items.forEach((it) => { (picksByMatch[it.matchId] ||= []).push({ b, it }); }));
+  const pickShown = (m, b) => !ql || (m.home + m.away).toLowerCase().includes(ql) || (b.user + " " + b.code).toLowerCase().includes(ql);
+
+  const matchList = FIXTURES
+    .filter((m) => (picksByMatch[m.n] || []).some(({ b }) => pickShown(m, b)))
+    .sort((a, b) => kickoffMs(a) - kickoffMs(b));
+  const groups = { live: [], draft: [], notset: [], settled: [] };
+  matchList.forEach((m) => groups[statusOf(m.n)].push(m));
+
+  const SECTIONS = [
+    ["live", "Live", "bg-sky-500/20 text-sky-300"],
+    ["draft", "Draft", "bg-amber-500/20 text-amber-300"],
+    ["notset", "Not set", "bg-white/10 text-stone-400"],
+    ["settled", "Settled", "bg-emerald-500/20 text-emerald-300"],
+  ];
+
+  const MatchCard = (m) => {
+    const rows = (picksByMatch[m.n] || []).filter(({ b }) => pickShown(m, b));
+    return (
+      <div key={m.n} className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="mb-2 text-xs font-bold">
+          {m.hf} {m.home} v {m.away} {m.af}
+          <span className="ml-1.5 font-normal text-stone-500">{m.day} · {m.date.replace(/,?\s*20\d\d/, "")} · {m.time}</span>
+        </div>
+        <div className="space-y-1.5">
+          {rows.map(({ b, it }) => (
+            <div key={b.id + it.selId} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs">
+              <div className="min-w-0">
+                <div className="text-[10px] text-stone-500">👤 {b.user} · <span className="font-mono">{b.code}</span> · {it.marketTitle}</div>
+                <div className={`truncate font-medium ${it.status === "void" ? "text-stone-500 line-through" : ""}`}>{selDisplay(it)} <span className="text-emerald-300">@{it.oddsStr}</span> · {money(it.stake)}</div>
+                {it.status === "void" && <div className="text-[10px] text-stone-500">voided{it.voidReason ? `: ${it.voidReason}` : ""}{it.voidedBy ? ` · by ${it.voidedBy}` : ""}</div>}
+              </div>
+              {it.status === "void" ? (
+                <span className="shrink-0 rounded bg-stone-500/20 px-2 py-1 text-[9px] font-bold uppercase text-stone-300">void</span>
+              ) : (
+                <button onClick={() => { setConfirm({ betId: b.id, selId: it.selId, matchId: it.matchId, label: `${it.marketTitle}: ${selDisplay(it)}`, code: b.code, player: b.user }); setReason(""); }}
+                  className="shrink-0 rounded-lg bg-rose-500/15 px-3 py-1.5 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/25">Void</button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div>
       <SectionTitle icon={<Ban className="h-5 w-5" />} title="Void a Pick" sub="Cancel one selection — its stake is refunded and it's left out of settlement" />
@@ -2277,40 +2330,29 @@ function VoidPanel({ bets, voidPick, showToast }) {
       </div>
       <div className="relative mb-3">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by player or slip code…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by team, player, or slip code…"
           className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
       </div>
 
-      <div className="space-y-2.5 pb-6">
-        {matchBets.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No slips match your search.</p>}
-        {matchBets.map((b) => (
-          <div key={b.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-bold">👤 {b.user}</div>
-                <div className="font-mono text-[11px] text-stone-500">{b.code} · {new Date(b.ts).toLocaleString()}</div>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${b.status === "won" ? "bg-emerald-500/15 text-emerald-300" : b.status === "lost" ? "bg-rose-500/15 text-rose-300" : b.status === "void" ? "bg-stone-500/20 text-stone-300" : "bg-sky-500/15 text-sky-300"}`}>{b.status}</span>
+      <div className="space-y-2 pb-6">
+        {matchList.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No match picks to void{ql ? " for your search" : " yet"}.</p>}
+        {matchList.length > 0 && SECTIONS.map(([key, label, badgeCls]) => {
+          const ms = groups[key];
+          if (!ms.length) return null;
+          const isOpen = ql ? true : open[key];
+          return (
+            <div key={key} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+              <button onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))} className="flex w-full items-center justify-between px-4 py-3 text-left">
+                <span className="flex items-center gap-2 text-sm font-bold">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${badgeCls}`}>{label}</span>
+                  <span className="text-stone-400">({ms.length} {ms.length === 1 ? "match" : "matches"})</span>
+                </span>
+                <ChevronRight className={`h-4 w-4 text-stone-500 transition ${isOpen ? "rotate-90" : ""}`} />
+              </button>
+              {isOpen && <div className="space-y-2 border-t border-white/5 p-3">{ms.map(MatchCard)}</div>}
             </div>
-            <div className="space-y-1.5">
-              {b.items.map((it) => (
-                <div key={it.selId + it.matchId} className="flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs">
-                  <div className="min-w-0">
-                    <div className="text-[10px] text-stone-500">{matchName(it.matchId)} · {it.marketTitle}</div>
-                    <div className={`truncate font-medium ${it.status === "void" ? "text-stone-500 line-through" : ""}`}>{selDisplay(it)} <span className="text-emerald-300">@{it.oddsStr}</span> · {money(it.stake)}</div>
-                    {it.status === "void" && <div className="text-[10px] text-stone-500">voided{it.voidReason ? `: ${it.voidReason}` : ""}{it.voidedBy ? ` · by ${it.voidedBy}` : ""}</div>}
-                  </div>
-                  {it.status === "void" ? (
-                    <span className="shrink-0 rounded bg-stone-500/20 px-2 py-1 text-[9px] font-bold uppercase text-stone-300">void</span>
-                  ) : (
-                    <button onClick={() => { setConfirm({ betId: b.id, selId: it.selId, matchId: it.matchId, label: `${it.marketTitle}: ${selDisplay(it)}`, code: b.code, player: b.user }); setReason(""); }}
-                      className="shrink-0 rounded-lg bg-rose-500/15 px-3 py-1.5 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/25">Void</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {confirm && (
