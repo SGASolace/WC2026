@@ -2248,7 +2248,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
 /* ---------- Admin: void a single pick (refund + exclude from settlement) ---------- */
 function VoidPanel({ bets, results, configs, voidPick, showToast }) {
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState({ live: true, draft: true, notset: true, settled: false });
+  const [open, setOpen] = useState({}); // all status groups collapsed by default
   const [confirm, setConfirm] = useState(null); // { betId, selId, matchId, label, code, player }
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2930,7 +2930,7 @@ function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerO
 
 function MatchPicker({ results, configs, onPick, manage, bets }) {
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState({ live: true, draft: true, notset: true, settled: false });
+  const [open, setOpen] = useState({}); // all status groups collapsed by default
   const matchBetsFor = (n) => (bets || [])
     .map((b) => ({ ...b, items: b.items.filter((it) => it.matchId === n) }))
     .filter((b) => b.items.length);
