@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Trophy, Calendar, Clock, Receipt, ListChecks, Crown, ShieldCheck, LogOut,
   Search, Plus, X, Lock, Check, ChevronRight, ChevronLeft, Sun, Moon,
-  Settings, BarChart3, Users, Wallet, TrendingUp, Flag, Ticket, AlertCircle, Ban,
+  Settings, BarChart3, Users, Wallet, TrendingUp, Flag, Ticket, AlertCircle, Ban, Zap,
 } from "lucide-react";
 import { supabase, hasSupabase } from "./supabaseClient.js";
 
@@ -87,6 +87,17 @@ const OUTRIGHT_MATCH = { n: -1, home: "Tournament", away: "Outrights" };
 
 /* ---------- Fantasy Manager (manager-of-the-matchday; uses the MATCH wallet) ---------- */
 const FANTASY_RULES = { min: 200, max: 1000 };
+const BOOST_RULES = { min: 200, max: 1000 }; // special-boost accumulators (match wallet)
+// lock time stored as a ms instant; admin enters/views it as GMT+6 (Dhaka) wall-clock
+const toLocalInput = (ms) => { if (!ms) return ""; return new Date(ms + 6 * 3600e3).toISOString().slice(0, 16); };
+const fromLocalInput = (val) => val ? new Date(val + ":00+06:00").getTime() : null;
+function boostCountdown(ms, now = Date.now()) {
+  if (!ms) return null;
+  const diff = ms - now;
+  if (diff <= 0) return null;
+  const d = Math.floor(diff / 8.64e7), h = Math.floor((diff % 8.64e7) / 3.6e6), mn = Math.floor((diff % 3.6e6) / 6e4);
+  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${mn}m` : `${mn}m`;
+}
 const FM_CATS = [
   { key: "md1", label: "Matchday 1", mid: -11 }, { key: "md2", label: "Matchday 2", mid: -12 },
   { key: "md3", label: "Matchday 3", mid: -13 }, { key: "md4", label: "Matchday 4", mid: -14 },
@@ -949,6 +960,33 @@ export default function App() {
 
   const resetAll = async () => { await db.resetAll(); await refresh(); };
 
+  // Special Boosts: manual Won/No per boost. Boost bets are single-pick slips (kind "boost") on the MATCH wallet.
+  const settleBoost = async (boostId, result) => {
+    const cfg = configs[-3] || { boosts: [] };
+    const boosts = (cfg.boosts || []).map((bx) => bx.id === boostId ? { ...bx, result, settledAt: new Date().toISOString() } : bx);
+    await db.saveConfig(-3, { ...cfg, boosts }, session.user.id);
+    const affected = bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === boostId));
+    for (const b of affected) {
+      const items = b.items.map((it) => it.boostId === boostId && it.status !== "void" ? { ...it, status: result === "won" ? "won" : "lost" } : it);
+      const live = items.filter((it) => it.status !== "void");
+      const status = live.some((it) => it.status === "open") ? "open" : live.some((it) => it.status === "lost") ? "lost" : "won";
+      const payout = status === "won" ? items.reduce((a, it) => a + (it.status === "won" ? it.stake * it.odds : 0), 0) : 0;
+      await db.updateBet(b.id, { items, status, payout });
+    }
+    await refresh();
+  };
+  const resetBoost = async (boostId) => {
+    const cfg = configs[-3] || { boosts: [] };
+    const boosts = (cfg.boosts || []).map((bx) => bx.id === boostId ? { ...bx, result: null, settledAt: null } : bx);
+    await db.saveConfig(-3, { ...cfg, boosts }, session.user.id);
+    const affected = bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === boostId));
+    for (const b of affected) {
+      const items = b.items.map((it) => it.boostId === boostId && it.status !== "void" ? { ...it, status: "open" } : it);
+      await db.updateBet(b.id, { items, status: items.some((it) => it.status === "void") && items.every((it) => it.status === "void") ? "void" : "open", payout: 0 });
+    }
+    await refresh();
+  };
+
   if (!hasSupabase) return <ConfigNeeded />;
   if (!authReady) return <Splash msg="Loading…" />;
   if (recovery) return <ResetPassword showToast={showToast} onDone={() => setRecovery(false)} />;
@@ -961,6 +999,7 @@ export default function App() {
   const myWalletBets = allMine.filter((b) => b.kind !== "outright"); // match wallet = match + fantasy
   const myMatchBets = allMine.filter((b) => (b.kind || "match") === "match");
   const myFantasyBets = allMine.filter((b) => b.kind === "fantasy");
+  const myBoostBets = allMine.filter((b) => b.kind === "boost");
   const myOgBets = allMine.filter((b) => b.kind === "outright");
   const wallet = walletOf(profile, myWalletBets);
   const ogWallet = walletOg(profile, myOgBets);
@@ -977,7 +1016,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl overflow-x-hidden px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} voidPick={voidPick} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} settleBoost={settleBoost} resetBoost={resetBoost} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} voidPick={voidPick} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} myBets={myMatchBets} />}
@@ -986,6 +1025,7 @@ export default function App() {
                 )}
                 {tab === "outrights" && <Outrights config={ogConfig} wallet={ogWallet} slip={ogSlip} setSlip={setOgSlip} now={now} ogBets={myOgBets} nickname={profile.nickname} />}
                 {tab === "fantasy" && <Fantasy config={fmConfig} wallet={wallet} results={results} slip={fmSlip} setSlip={setFmSlip} fmBets={myFantasyBets} nickname={profile.nickname} />}
+                {tab === "boosts" && <Boosts config={configs[-3]} wallet={wallet} myBets={myBoostBets} now={now} nickname={profile.nickname} placeBet={placeBet} showToast={showToast} />}
                 {tab === "mybets" && <MyBets bets={myMatchBets} wallet={wallet} nickname={profile.nickname} txns={txns} />}
                 {tab === "board" && <Leaderboard bets={matchBets} me={profile.nickname} />}
               </>
@@ -2141,7 +2181,7 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, resetAll, saveConfig, saveConfigMany, voidPick, creditPlayer, creditPlayerOg, showToast }) {
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, settleBoost, resetBoost, resetAll, saveConfig, saveConfigMany, voidPick, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players | void
   const [quick, setQuick] = useState(false);
   const [pick, setPick] = useState(null);
@@ -2214,7 +2254,10 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         <>
           <SectionTitle icon={<Settings className="h-5 w-5" />} title="Result Settlement" sub="Enter outcomes — the engine settles every prediction automatically" />
           {!pick ? (
-            <MatchPicker results={results} configs={configs} onPick={setPick} bets={bets} />
+            <>
+              <BoostSettle config={configs[-3]} bets={bets} settleBoost={settleBoost} resetBoost={resetBoost} showToast={showToast} />
+              <MatchPicker results={results} configs={configs} onPick={setPick} bets={bets} />
+            </>
           ) : (
             <SettleForm match={pick} config={configs[pick.n]} onBack={() => setPick(null)} results={results} settleMatch={settleMatch} resetMatch={resetMatch} bets={bets} showToast={showToast} />
           )}
@@ -2229,6 +2272,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
               onClose={() => setQuick(false)} onOpenFull={(m) => { setQuick(false); setPick(m); }} />
           ) : (
             <>
+              <BoostAdmin config={configs[-3]} bets={bets} saveConfig={saveConfig} showToast={showToast} />
               <button onClick={() => setQuick(true)}
                 className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 text-sm font-bold text-black">
                 ⚡ Quick 1X2 + Live — set all 72 matches in one screen
@@ -3892,9 +3936,222 @@ const Stat = ({ label, v, good }) => (
   </div>
 );
 
+/* ---------- Player: Special Boosts (accumulators on the match wallet) ---------- */
+function Boosts({ config, wallet, myBets = [], now, nickname, placeBet, showToast }) {
+  const live = (config?.boosts || []).filter((b) => b.live && !b.result);
+  const [stakes, setStakes] = useState({});
+  const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const setStake = (id, v) => setStakes((s) => ({ ...s, [id]: v }));
+  const stakedOn = (id) => myBets.filter((b) => b.status !== "void")
+    .reduce((a, b) => a + b.items.filter((it) => it.boostId === id && it.status !== "void").reduce((s, it) => s + it.stake, 0), 0);
+
+  const start = (boost) => {
+    const stake = Math.round(+stakes[boost.id] || 0);
+    if (now >= (boost.lockMs || Infinity)) return showToast("This boost is locked", "err");
+    if (stake < BOOST_RULES.min) return showToast(`Min stake is ${money(BOOST_RULES.min)}`, "err");
+    if (stake > BOOST_RULES.max) return showToast(`Max stake is ${money(BOOST_RULES.max)}`, "err");
+    if (stakedOn(boost.id) + stake > BOOST_RULES.max) return showToast(`Max ${money(BOOST_RULES.max)} total on one boost`, "err");
+    if (stake > wallet.net) return showToast("Not enough coins in your match wallet", "err");
+    setConfirm({ boost, stake });
+  };
+  const place = async () => {
+    const { boost, stake } = confirm; const odds = toDecimal(boost.oddsStr);
+    const bet = { id: uid(), code: betCode(), user: nickname, ts: new Date().toISOString(),
+      items: [{ boostId: boost.id, matchId: null, marketKey: "boost", marketTitle: "Special Boost", selId: boost.id, label: boost.label, oddsStr: boost.oddsStr, odds, stake, status: "open" }],
+      totalStake: stake, potential: stake * odds, status: "open", kind: "boost" };
+    setBusy(true);
+    try { await placeBet(bet); showToast("Boost backed — good luck!"); setConfirm(null); setStake(boost.id, ""); }
+    catch (e) { showToast(e.message || "Could not place this boost", "err"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <SectionTitle icon={<Zap className="h-5 w-5" />} title="Special Boosts" sub="Pre-built accumulators at boosted odds · uses your match wallet" />
+      <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2.5 text-sm">
+        <span className="font-semibold text-emerald-300">Match wallet balance</span>
+        <span className="font-bold text-white">{money(wallet.net)}</span>
+      </div>
+      <p className="mb-3 text-xs text-stone-500">Stake {money(BOOST_RULES.min)}–{money(BOOST_RULES.max)} per boost · paid from your match wallet · settled Won / No.</p>
+
+      <div className="space-y-3">
+        {live.length === 0 && <p className="rounded-xl border border-white/10 bg-white/[0.02] py-8 text-center text-sm text-stone-500">No special boosts are open right now. Check back soon.</p>}
+        {live.map((b) => {
+          const locked = now >= (b.lockMs || Infinity);
+          const cd = boostCountdown(b.lockMs, now);
+          const stake = Math.round(+stakes[b.id] || 0);
+          const already = stakedOn(b.id);
+          return (
+            <div key={b.id} className="rounded-2xl border border-white/10 bg-gradient-to-br from-amber-500/10 to-emerald-500/5 p-4">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-300/80">⚡ Special Boost</div>
+                  <div className="text-sm font-bold">{b.label}</div>
+                </div>
+                <span className="shrink-0 rounded-lg bg-amber-400 px-2.5 py-1 text-sm font-bold text-black">{b.oddsStr}</span>
+              </div>
+              <div className="mb-2 text-[11px]">
+                {locked ? <span className="text-rose-300">🔒 Locked</span> : cd ? <span className="text-amber-300">Closes in {cd}</span> : <span className="text-stone-500">Open</span>}
+                {already > 0 && <span className="ml-2 text-stone-500">You've staked {money(already)}</span>}
+              </div>
+              {!locked && already < BOOST_RULES.max ? (
+                <div className="flex items-center gap-2">
+                  <input type="number" value={stakes[b.id] ?? ""} onChange={(e) => setStake(b.id, e.target.value)} placeholder={`${BOOST_RULES.min}–${BOOST_RULES.max}`}
+                    className="w-28 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-amber-400/60" />
+                  <span className="text-[11px] text-stone-500">{stake > 0 ? `Returns ${money(stake * toDecimal(b.oddsStr))}` : ""}</span>
+                  <button onClick={() => start(b)} className="ml-auto shrink-0 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 px-4 py-2 text-sm font-bold text-black">Back boost</button>
+                </div>
+              ) : already >= BOOST_RULES.max ? (
+                <p className="text-[11px] text-emerald-300/80">You've reached the {money(BOOST_RULES.max)} max on this boost.</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-8">
+        <SectionTitle icon={<Receipt className="h-5 w-5" />} title="My Boosts" sub={`${myBets.length} placed`} />
+        {myBets.length > 0 && (
+          <button onClick={() => printPicks(myBets, `${nickname} — Special Boosts`, false)}
+            className="mb-3 flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /> Download PDF</button>
+        )}
+        <div className="space-y-2.5">
+          {myBets.length === 0 && <p className="py-8 text-center text-sm text-stone-500">No boosts backed yet.</p>}
+          {myBets.map((b) => <BetCard key={b.id} b={b} />)}
+        </div>
+      </div>
+
+      {confirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={() => !busy && setConfirm(null)}>
+          <div className="w-full max-w-sm rounded-3xl border border-amber-400/30 bg-[#0a1311] p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center gap-2 font-display text-2xl text-white"><Zap className="h-5 w-5 text-amber-300" /> Back this boost?</div>
+            <div className="mb-3 rounded-xl bg-black/30 p-3 text-sm">
+              <div className="font-semibold text-stone-100">{confirm.boost.label}</div>
+              <div className="mt-1 text-xs text-stone-400">Odds {confirm.boost.oddsStr} · Stake {money(confirm.stake)} · Returns {money(confirm.stake * toDecimal(confirm.boost.oddsStr))}</div>
+            </div>
+            <p className="mb-3 text-[11px] text-stone-500">Paid from your match wallet. Picks can't be edited after placing.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirm(null)} disabled={busy} className="flex-1 rounded-xl bg-white/5 py-2.5 text-sm font-semibold text-stone-300">Cancel</button>
+              <button onClick={place} disabled={busy} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-2.5 text-sm font-bold text-black disabled:opacity-50">{busy ? "Placing…" : "Confirm"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Admin: Special Boosts — add / odds / lock / go-live / download (Odds tab) ---------- */
+function BoostAdmin({ config, bets, saveConfig, showToast }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState(() => (config?.boosts || []).map((b) => ({ ...b })));
+  const [busy, setBusy] = useState(false);
+  const add = () => setList((l) => [...l, { id: "bo_" + uid(), label: "", oddsStr: "5/1", lockMs: null, live: false, result: null }]);
+  const setF = (i, k, v) => setList((l) => l.map((x, j) => j === i ? { ...x, [k]: v } : x));
+  const del = (i) => setList((l) => l.filter((_, j) => j !== i));
+  const backersFor = (id) => bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === id));
+  const dl = (b, pdf) => {
+    const mb = backersFor(b.id); if (!mb.length) { showToast("No picks on this boost yet", "err"); return; }
+    pdf ? printPicks(mb, `${b.label} — Boost Picks`, true) : exportPicksCSV(mb, `SGA_boost_${b.label}.csv`.replace(/[^\w.]+/g, "_"), true);
+  };
+  const save = async () => {
+    for (const b of list) if (!(b.label || "").trim()) return showToast("Every boost needs a label", "err");
+    setBusy(true);
+    try {
+      await saveConfig(-3, { ...(config || {}), boosts: list.map((b) => ({ id: b.id, label: b.label.trim(), oddsStr: b.oddsStr || "5/1", lockMs: b.lockMs || null, live: !!b.live, result: b.result || null, settledAt: b.settledAt || null })) });
+      showToast("Special boosts saved");
+    } catch (e) { showToast(e.message || "Save failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+        <span>⚡ Special Boosts <span className="text-[11px] font-normal text-stone-500">({list.length})</span></span>
+        <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t border-white/5 p-3">
+          <p className="mb-2 text-[11px] text-stone-500">Build accumulators (e.g. “England, Portugal &amp; Ghana All To Win”). Set boosted odds + a lock time (GMT+6), flip Live, then Save. Settle Won/No in the Settle tab.</p>
+          <div className="space-y-3">
+            {list.map((b, i) => {
+              const backers = backersFor(b.id);
+              const stake = backers.reduce((a, x) => a + x.totalStake, 0);
+              return (
+                <div key={b.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-stone-400">Boost {i + 1}{b.result ? ` · ${b.result === "won" ? "WON" : "NO"}` : ""}</span>
+                    <button onClick={() => del(i)} className="rounded-md bg-white/5 p-1.5 text-stone-400 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <input value={b.label} onChange={(e) => setF(i, "label", e.target.value)} placeholder="England, Portugal & Ghana All To Win"
+                    className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="block"><span className="mb-1 block text-[10px] uppercase tracking-wide text-stone-500">Boosted odds</span>
+                      <input value={b.oddsStr} onChange={(e) => setF(i, "oddsStr", e.target.value)} placeholder="6/1" className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-center text-sm outline-none focus:border-emerald-400/50" /></label>
+                    <label className="block"><span className="mb-1 block text-[10px] uppercase tracking-wide text-stone-500">Lock time (GMT+6)</span>
+                      <input type="datetime-local" value={toLocalInput(b.lockMs)} onChange={(e) => setF(i, "lockMs", fromLocalInput(e.target.value))} className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none focus:border-emerald-400/50" /></label>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button onClick={() => setF(i, "live", !b.live)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${b.live ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{b.live ? "Live" : "Draft"}</button>
+                    <span className="text-[11px] text-stone-500">{backers.length} picks · {money(stake)}</span>
+                    <span className="ml-auto flex gap-1">
+                      <button onClick={() => dl(b, false)} title="Excel" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => dl(b, true)} title="PDF" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={add} className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"><Plus className="h-3.5 w-3.5" /> Add a boost</button>
+          <button onClick={save} disabled={busy} className="mt-2 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-2.5 text-sm font-bold text-black disabled:opacity-50">{busy ? "Saving…" : "Save Boosts"}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Admin: settle Special Boosts Won / No (Settle tab) ---------- */
+function BoostSettle({ config, bets, settleBoost, resetBoost, showToast }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const shown = (config?.boosts || []).filter((b) => b.live || b.result);
+  const backers = (id) => bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === id));
+  const act = async (fn) => { setBusy(true); try { await fn(); } catch (e) { showToast(e.message || "Failed", "err"); } finally { setBusy(false); } };
+  if (!shown.length) return null;
+  return (
+    <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
+        <span>⚡ Special Boosts <span className="text-[11px] font-normal text-stone-500">({shown.length})</span></span>
+        <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-white/5 p-3">
+          {shown.map((b) => {
+            const list = backers(b.id);
+            const stake = list.reduce((a, x) => a + x.totalStake, 0);
+            return (
+              <div key={b.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-sm font-semibold">{b.label}</div>
+                <div className="text-[11px] text-stone-500">{b.oddsStr} · {list.length} picks · {money(stake)}{b.result ? ` · settled ${b.result === "won" ? "WON" : "NO"}` : ""}</div>
+                <div className="mt-2 flex gap-2">
+                  <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "won"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "won" ? "bg-emerald-400 text-black" : "bg-emerald-500/20 text-emerald-300"}`}>Won (pay out)</button>
+                  <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "no"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "no" ? "bg-rose-500 text-white" : "bg-rose-500/15 text-rose-200"}`}>No</button>
+                  {b.result && <button disabled={busy} onClick={() => act(() => resetBoost(b.id))} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-300 disabled:opacity-50">Reset</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BottomNav({ tab, setTab, slipCount, ogCount, fmCount }) {
   const items = [
     { k: "matches", label: "Matches", icon: Calendar },
+    { k: "boosts", label: "Boosts", icon: Zap },
     { k: "outrights", label: "Outrights", icon: Trophy, badge: ogCount },
     { k: "fantasy", label: "Fantasy", icon: Users, badge: fmCount },
     { k: "mybets", label: "My Picks", icon: Receipt },
