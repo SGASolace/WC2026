@@ -987,6 +987,25 @@ export default function App() {
     await refresh();
   };
 
+  // Void a whole boost: refund every backer's stake and cancel it (it leaves the leaderboard too).
+  const voidBoost = async (boostId, reason) => {
+    const cfg = configs[-3] || { boosts: [] };
+    const boosts = (cfg.boosts || []).map((bx) => bx.id === boostId ? { ...bx, result: "void", live: false, settledAt: new Date().toISOString() } : bx);
+    await db.saveConfig(-3, { ...cfg, boosts }, session.user.id);
+    const affected = bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === boostId && it.status !== "void"));
+    for (const b of affected) {
+      const items = b.items.map((it) => it.boostId === boostId && it.status !== "void"
+        ? { ...it, status: "void", voidReason: (reason || "").trim(), voidedAt: new Date().toISOString(), voidedBy: profile.nickname } : it);
+      const live = items.filter((it) => it.status !== "void");
+      const total_stake = live.reduce((a, it) => a + it.stake, 0);
+      const potential = live.reduce((a, it) => a + it.stake * it.odds, 0);
+      const status = live.length === 0 ? "void" : live.some((it) => it.status === "open") ? "open" : live.some((it) => it.status === "lost") ? "lost" : "won";
+      const payout = status === "won" ? items.reduce((a, it) => a + (it.status === "won" ? it.stake * it.odds : 0), 0) : 0;
+      await db.updateBet(b.id, { items, status, payout, total_stake, potential });
+    }
+    await refresh();
+  };
+
   if (!hasSupabase) return <ConfigNeeded />;
   if (!authReady) return <Splash msg="Loading…" />;
   if (recovery) return <ResetPassword showToast={showToast} onDone={() => setRecovery(false)} />;
@@ -1016,7 +1035,7 @@ export default function App() {
 
           <main className="mx-auto max-w-5xl overflow-x-hidden px-4 pb-32 pt-4">
             {role === "admin" ? (
-              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} settleBoost={settleBoost} resetBoost={resetBoost} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} voidPick={voidPick} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
+              <AdminPanel bets={bets} results={results} configs={configs} players={players} txns={txns} settleMatch={settleMatch} resetMatch={resetMatch} settleOutright={settleOutright} resetOutright={resetOutright} settleFantasy={settleFantasy} resetFantasy={resetFantasy} settleBoost={settleBoost} resetBoost={resetBoost} voidBoost={voidBoost} resetAll={resetAll} saveConfig={saveConfig} saveConfigMany={saveConfigMany} voidPick={voidPick} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} showToast={showToast} />
             ) : (
               <>
                 {tab === "matches" && !activeMatch && <MatchList onOpen={setActiveMatch} results={results} configs={configs} now={now} nickname={profile.nickname} myBets={myMatchBets} />}
@@ -2181,7 +2200,7 @@ function Leaderboard({ bets, me }) {
 }
 
 /* ---------- Admin ---------- */
-function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, settleBoost, resetBoost, resetAll, saveConfig, saveConfigMany, voidPick, creditPlayer, creditPlayerOg, showToast }) {
+function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetMatch, settleOutright, resetOutright, settleFantasy, resetFantasy, settleBoost, resetBoost, voidBoost, resetAll, saveConfig, saveConfigMany, voidPick, creditPlayer, creditPlayerOg, showToast }) {
   const [mode, setMode] = useState("settle"); // settle | manage | outrights | players | void
   const [quick, setQuick] = useState(false);
   const [pick, setPick] = useState(null);
@@ -2255,7 +2274,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
           <SectionTitle icon={<Settings className="h-5 w-5" />} title="Result Settlement" sub="Enter outcomes — the engine settles every prediction automatically" />
           {!pick ? (
             <>
-              <BoostSettle config={configs[-3]} bets={bets} settleBoost={settleBoost} resetBoost={resetBoost} showToast={showToast} />
+              <BoostSettle config={configs[-3]} bets={bets} settleBoost={settleBoost} resetBoost={resetBoost} voidBoost={voidBoost} showToast={showToast} />
               <MatchPicker results={results} configs={configs} onPick={setPick} bets={bets} />
             </>
           ) : (
@@ -4120,12 +4139,19 @@ function BoostAdmin({ config, bets, saveConfig, showToast }) {
 }
 
 /* ---------- Admin: settle Special Boosts Won / No (Settle tab) ---------- */
-function BoostSettle({ config, bets, settleBoost, resetBoost, showToast }) {
+function BoostSettle({ config, bets, settleBoost, resetBoost, voidBoost, showToast }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [voiding, setVoiding] = useState(null); // { id, label } pending void
+  const [reason, setReason] = useState("");
   const shown = (config?.boosts || []).filter((b) => b.live || b.result);
   const backers = (id) => bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === id));
   const act = async (fn) => { setBusy(true); try { await fn(); } catch (e) { showToast(e.message || "Failed", "err"); } finally { setBusy(false); } };
+  const confirmVoid = async () => {
+    if (!reason.trim()) return showToast("Add a short reason for the void", "err");
+    await act(() => voidBoost(voiding.id, reason.trim()));
+    setVoiding(null); setReason("");
+  };
   if (!shown.length) return null;
   return (
     <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
@@ -4138,18 +4164,38 @@ function BoostSettle({ config, bets, settleBoost, resetBoost, showToast }) {
           {shown.map((b) => {
             const list = backers(b.id);
             const stake = list.reduce((a, x) => a + x.totalStake, 0);
+            const voided = b.result === "void";
             return (
               <div key={b.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
                 <div className="text-sm font-semibold">{b.label}</div>
-                <div className="text-[11px] text-stone-500">{b.oddsStr} · {list.length} picks · {money(stake)}{b.result ? ` · settled ${b.result === "won" ? "WON" : "NO"}` : ""}</div>
-                <div className="mt-2 flex gap-2">
-                  <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "won"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "won" ? "bg-emerald-400 text-black" : "bg-emerald-500/20 text-emerald-300"}`}>Won (pay out)</button>
-                  <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "no"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "no" ? "bg-rose-500 text-white" : "bg-rose-500/15 text-rose-200"}`}>No</button>
-                  {b.result && <button disabled={busy} onClick={() => act(() => resetBoost(b.id))} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-300 disabled:opacity-50">Reset</button>}
-                </div>
+                <div className="text-[11px] text-stone-500">{b.oddsStr} · {list.length} picks · {money(stake)}{b.result ? ` · ${b.result === "won" ? "settled WON" : b.result === "no" ? "settled NO" : "VOIDED (refunded)"}` : ""}</div>
+                {voided ? (
+                  <div className="mt-2 rounded-lg bg-stone-500/15 px-3 py-2 text-[11px] font-semibold text-stone-300">🚫 Voided — all stakes refunded. This boost no longer counts on the leaderboard.</div>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "won"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "won" ? "bg-emerald-400 text-black" : "bg-emerald-500/20 text-emerald-300"}`}>Won (pay out)</button>
+                    <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "no"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "no" ? "bg-rose-500 text-white" : "bg-rose-500/15 text-rose-200"}`}>No</button>
+                    {b.result && <button disabled={busy} onClick={() => act(() => resetBoost(b.id))} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-300 disabled:opacity-50">Reset</button>}
+                    <button disabled={busy} onClick={() => { setVoiding({ id: b.id, label: b.label }); setReason(""); }} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-400 hover:text-rose-300 disabled:opacity-50">Void</button>
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+      {voiding && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur" onClick={() => !busy && setVoiding(null)}>
+          <div className="w-full max-w-sm rounded-3xl border border-rose-400/30 bg-[#0a1311] p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 flex items-center gap-2 font-display text-2xl text-white"><Ban className="h-5 w-5 text-rose-300" /> Void this boost?</div>
+            <p className="mb-3 text-xs text-stone-400">“{voiding.label}” — every backer's stake is refunded and the boost is removed from the leaderboard. This can't be undone.</p>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (e.g. match postponed)"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-rose-400/50" />
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => setVoiding(null)} disabled={busy} className="flex-1 rounded-xl bg-white/5 py-2.5 text-sm font-semibold text-stone-300">Cancel</button>
+              <button onClick={confirmVoid} disabled={busy} className="flex-1 rounded-xl bg-rose-500 py-2.5 text-sm font-bold text-white disabled:opacity-50">{busy ? "Voiding…" : "Void & refund"}</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
