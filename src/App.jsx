@@ -4055,14 +4055,22 @@ function BoostAdmin({ config, bets, saveConfig, showToast }) {
     const mb = backersFor(b.id); if (!mb.length) { showToast("No picks on this boost yet", "err"); return; }
     pdf ? printPicks(mb, `${b.label} — Boost Picks`, true) : exportPicksCSV(mb, `SGA_boost_${b.label}.csv`.replace(/[^\w.]+/g, "_"), true);
   };
+  const buildPayload = (l) => ({ ...(config || {}), boosts: l.map((b) => ({ id: b.id, label: (b.label || "").trim(), oddsStr: b.oddsStr || "5/1", lockMs: b.lockMs || null, live: !!b.live, result: b.result || null, settledAt: b.settledAt || null })) });
+  const persist = async (l, msg) => {
+    setBusy(true);
+    try { await saveConfig(-3, buildPayload(l)); showToast(msg); }
+    catch (e) { showToast(e.message || "Save failed (admin only)", "err"); }
+    finally { setBusy(false); }
+  };
+  const toggleLive = async (i) => {
+    if (!(list[i].label || "").trim()) return showToast("Add a label before going live", "err");
+    const next = list.map((x, j) => j === i ? { ...x, live: !x.live } : x);
+    setList(next);
+    await persist(next, next[i].live ? "Boost is now LIVE for players" : "Boost set to draft");
+  };
   const save = async () => {
     for (const b of list) if (!(b.label || "").trim()) return showToast("Every boost needs a label", "err");
-    setBusy(true);
-    try {
-      await saveConfig(-3, { ...(config || {}), boosts: list.map((b) => ({ id: b.id, label: b.label.trim(), oddsStr: b.oddsStr || "5/1", lockMs: b.lockMs || null, live: !!b.live, result: b.result || null, settledAt: b.settledAt || null })) });
-      showToast("Special boosts saved");
-    } catch (e) { showToast(e.message || "Save failed (admin only)", "err"); }
-    finally { setBusy(false); }
+    await persist(list, "Special boosts saved");
   };
   return (
     <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
@@ -4072,7 +4080,7 @@ function BoostAdmin({ config, bets, saveConfig, showToast }) {
       </button>
       {open && (
         <div className="border-t border-white/5 p-3">
-          <p className="mb-2 text-[11px] text-stone-500">Build accumulators (e.g. “England, Portugal &amp; Ghana All To Win”). Set boosted odds + a lock time (GMT+6), flip Live, then Save. Settle Won/No in the Settle tab.</p>
+          <p className="mb-2 text-[11px] text-stone-500">Build accumulators (e.g. “England, Portugal &amp; Ghana All To Win”). Set boosted odds + a lock time (GMT+6), then flip <b>Live</b> to publish it instantly to players. <b>Save Boosts</b> keeps edits to drafts. Settle Won/No in the Settle tab.</p>
           <div className="space-y-3">
             {list.map((b, i) => {
               const backers = backersFor(b.id);
@@ -4092,7 +4100,7 @@ function BoostAdmin({ config, bets, saveConfig, showToast }) {
                       <input type="datetime-local" value={toLocalInput(b.lockMs)} onChange={(e) => setF(i, "lockMs", fromLocalInput(e.target.value))} className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none focus:border-emerald-400/50" /></label>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <button onClick={() => setF(i, "live", !b.live)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${b.live ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{b.live ? "Live" : "Draft"}</button>
+                    <button onClick={() => toggleLive(i)} disabled={busy} className={`rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${b.live ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{b.live ? "Live" : "Draft"}</button>
                     <span className="text-[11px] text-stone-500">{backers.length} picks · {money(stake)}</span>
                     <span className="ml-auto flex gap-1">
                       <button onClick={() => dl(b, false)} title="Excel" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
