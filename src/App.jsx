@@ -2270,10 +2270,11 @@ function VoidPanel({ bets, results, configs, voidPick, showToast }) {
     finally { setBusy(false); }
   };
 
-  const statusOf = (n) => {
-    if (results[n]) return "settled";
-    const cfg = configs?.[n];
+  const statusOf = (m) => {
+    if (results[m.n]) return "settled";
+    const cfg = configs?.[m.n];
     if (cfg?.live) return "live";
+    if (Date.now() >= kickoffMs(m)) return "notoffered"; // kicked off but never went live
     if (cfg) return "draft";
     return "notset";
   };
@@ -2288,13 +2289,14 @@ function VoidPanel({ bets, results, configs, voidPick, showToast }) {
   const matchList = FIXTURES
     .filter((m) => (picksByMatch[m.n] || []).some(({ b }) => pickShown(m, b)))
     .sort((a, b) => kickoffMs(a) - kickoffMs(b));
-  const groups = { live: [], draft: [], notset: [], settled: [] };
-  matchList.forEach((m) => groups[statusOf(m.n)].push(m));
+  const groups = { live: [], draft: [], notset: [], notoffered: [], settled: [] };
+  matchList.forEach((m) => groups[statusOf(m)].push(m));
 
   const SECTIONS = [
     ["live", "Live", "bg-sky-500/20 text-sky-300"],
     ["draft", "Draft", "bg-amber-500/20 text-amber-300"],
     ["notset", "Not set", "bg-white/10 text-stone-400"],
+    ["notoffered", "Not offered", "bg-stone-600/40 text-stone-400"],
     ["settled", "Settled", "bg-emerald-500/20 text-emerald-300"],
   ];
 
@@ -2946,6 +2948,7 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
     if (results[m.n]) return "settled";
     const cfg = configs?.[m.n];
     if (cfg?.live) return "live";
+    if (Date.now() >= kickoffMs(m)) return "notoffered"; // kicked off but never went live
     if (cfg) return "draft";
     return "notset";
   };
@@ -2954,13 +2957,14 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
   const sorted = [...FIXTURES]
     .filter((m) => (m.home + m.away).toLowerCase().includes(ql))
     .sort((a, b) => kickoffMs(a) - kickoffMs(b)); // chronological by kickoff
-  const groups = { live: [], draft: [], notset: [], settled: [] };
+  const groups = { live: [], draft: [], notset: [], notoffered: [], settled: [] };
   sorted.forEach((m) => groups[statusOf(m)].push(m));
 
   const SECTIONS = [
     ["live", "Live", "bg-sky-500/20 text-sky-300"],
     ["draft", "Draft", "bg-amber-500/20 text-amber-300"],
     ["notset", "Not set", "bg-white/10 text-stone-400"],
+    ["notoffered", "Not offered", "bg-stone-600/40 text-stone-400"],
     ["settled", "Settled", "bg-emerald-500/20 text-emerald-300"],
   ];
 
@@ -3393,6 +3397,7 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
     setAddLines((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_x_${uid()}`, label, meta, oddsStr: oddsStr || "10/1" }] }));
   };
   const [preview, setPreview] = useState(false);
+  const [scOpen, setScOpen] = useState(false); // Goal Scorers section collapsed by default
   const previewMarkets = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines, off }), [match, home, away, odds, specials, addLines, off]);
   const delLine = (key, id) => setAddLines((a) => ({ ...a, [key]: (a[key] || []).filter((x) => x.id !== id) }));
 
@@ -3490,8 +3495,14 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         <OddsMarket mk={byKey.own_goal} odds={odds} setOdd={setOdd} />
       </div>
 
-      <div className="mt-5 mb-2 text-sm font-bold">⚽ Goal Scorers</div>
-      <p className="mb-2 text-[11px] text-stone-500">Add the squad names and set First / Anytime odds per player. The “Other Player” catch-all covers anyone not listed.</p>
+      <div className="mt-5 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+        <button onClick={() => setScOpen((v) => !v)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
+          <span>⚽ Goal Scorers</span>
+          <ChevronRight className={`h-4 w-4 text-stone-500 transition ${scOpen ? "rotate-90" : ""}`} />
+        </button>
+        {scOpen && (
+        <div className="border-t border-white/5 p-3">
+        <p className="mb-2 text-[11px] text-stone-500">Add the squad names and set First / Anytime odds per player. The “Other Player” catch-all covers anyone not listed.</p>
       {[["home", match.home, home], ["away", match.away, away]].map(([side, team, list]) => {
         const squad = SQUADS[team] || [];
         return (
@@ -3540,6 +3551,9 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
           <label className="block"><span className="mb-1 block text-[11px] text-stone-500">Anytime Scorer — Other</span>
             <input value={odds.anytime_scorer?.ao ?? "8/1"} onChange={(e) => setOdd("anytime_scorer", "ao", e.target.value)} className={ipt + " text-center"} /></label>
         </div>
+      </div>
+        </div>
+        )}
       </div>
 
       <button onClick={() => setPreview((p) => !p)}
