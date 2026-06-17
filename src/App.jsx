@@ -407,6 +407,10 @@ function buildMarkets(m, cfg = {}) {
     const o = cfg.odds[mk.key]?.[s.id];
     if (o) { s.oddsStr = o; s.odds = toDecimal(o); }
   }
+  // admin-removed default options for THIS match — hidden from new pick slips only.
+  // Already-placed bets keep their own meta and still settle exactly as before (no grading change).
+  const off = new Set(cfg?.off || []);
+  if (off.size) for (const mk of markets) mk.selections = mk.selections.filter((s) => !off.has(s.id));
   return markets;
 }
 
@@ -3370,24 +3374,26 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
   const [specials, setSpecials] = useState(() => (config?.specials || []).map((s) => ({ ...s })));
   const [addLines, setAddLines] = useState(() => JSON.parse(JSON.stringify(config?.addLines || {})));
+  const [off, setOff] = useState(() => [...(config?.off || [])]); // removed default option ids
   const [live, setLive] = useState(!!config?.live);
   const [busy, setBusy] = useState(false);
+  const offSet = useMemo(() => new Set(off), [off]);
+  const toggleOff = (id) => setOff((o) => o.includes(id) ? o.filter((x) => x !== id) : [...o, id]);
 
-  // markets to expose for odds editing (scorers handled via the player editor)
-  const editable = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines })
-    .filter((mk) => !["first_scorer", "anytime_scorer"].includes(mk.key)), [match, home, away, odds, specials, addLines]);
+  // full market map (unfiltered by "off", so the editor can show & restore removed lines)
+  const byKey = useMemo(() => Object.fromEntries(buildMarkets(match, { players: { home, away }, odds, specials, addLines }).map((mk) => [mk.key, mk])), [match, home, away, odds, specials, addLines]);
 
   const addLine = (key, label, meta, oddsStr) => {
-    const sig = (m) => key === "total_goals" ? JSON.stringify(m.tg) : (m.ht || m.ft);
+    const sig = (m) => key === "total_goals" ? JSON.stringify(m.tg) : key === "total_cards" ? JSON.stringify(m.c) : (m.ht || m.ft);
     const mkt = buildMarkets(match, { players: { home, away }, odds, specials, addLines }).find((x) => x.key === key);
     const existing = new Set((mkt?.selections || [])
-      .map((s) => key === "total_goals" ? JSON.stringify(s.meta?.tg) : (s.meta?.ht || s.meta?.ft))
+      .map((s) => key === "total_goals" ? JSON.stringify(s.meta?.tg) : key === "total_cards" ? JSON.stringify(s.meta?.c) : (s.meta?.ht || s.meta?.ft))
       .filter((x) => x && x !== "__OTHER__"));
     if (existing.has(sig(meta))) { showToast(`“${label}” is already in this market`, "err"); return; }
     setAddLines((a) => ({ ...a, [key]: [...(a[key] || []), { id: `${key}_x_${uid()}`, label, meta, oddsStr: oddsStr || "10/1" }] }));
   };
   const [preview, setPreview] = useState(false);
-  const previewMarkets = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines }), [match, home, away, odds, specials, addLines]);
+  const previewMarkets = useMemo(() => buildMarkets(match, { players: { home, away }, odds, specials, addLines, off }), [match, home, away, odds, specials, addLines, off]);
   const delLine = (key, id) => setAddLines((a) => ({ ...a, [key]: (a[key] || []).filter((x) => x.id !== id) }));
 
   const setPlayer = (side, i, field, val) => {
@@ -3411,7 +3417,7 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const cleanCfg = (liveVal) => {
     const clean = (arr) => arr.filter((p) => p.name.trim()).map((p) => ({ name: p.name.trim(), pos: p.pos || "", first: p.first || "10/1", any: p.any || "4/1" }));
     const cleanSp = specials.filter((s) => (s.label || "").trim()).map((s) => ({ id: s.id, label: s.label.trim(), odds: s.odds || "2/1" }));
-    return { players: { home: clean(home), away: clean(away) }, odds, specials: cleanSp, addLines, live: liveVal };
+    return { players: { home: clean(home), away: clean(away) }, odds, specials: cleanSp, addLines, off, live: liveVal };
   };
   // block saving when a player or special is listed more than once
   const dupError = () => {
@@ -3465,6 +3471,27 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         </button>
       </div>
 
+      {/* Markets & odds — in serial order */}
+      <div className="mt-1 mb-2 text-sm font-bold">Markets &amp; odds</div>
+      <div className="space-y-2">
+        <OddsMarket mk={byKey.match_result} odds={odds} setOdd={setOdd} />
+        <MatchSpecialEditor mk={byKey.specials} odds={odds} setOdd={setOdd} offSet={offSet} toggleOff={toggleOff}
+          specials={specials} addSpecial={addSpecial} setSpecial={setSpecial} delSpecial={delSpecial} />
+        <OddsMarket mk={byKey.ht_score} odds={odds} setOdd={setOdd}
+          extra={<ScoreLineAdder label="Half-Time score" H={match.home} A={match.away} field="ht" mkey="ht_score" lines={addLines.ht_score} onAdd={addLine} onDel={delLine} />} />
+        <OddsMarket mk={byKey.ft_score} odds={odds} setOdd={setOdd}
+          extra={<ScoreLineAdder label="Full-Time score" H={match.home} A={match.away} field="ft" mkey="ft_score" lines={addLines.ft_score} onAdd={addLine} onDel={delLine} />} />
+        <OddsMarket mk={byKey.total_goals} odds={odds} setOdd={setOdd} offSet={offSet} onToggleOff={toggleOff}
+          extra={<GoalsLineAdder lines={addLines.total_goals} onAdd={addLine} onDel={delLine} />} />
+        <OddsMarket mk={byKey.first_goal_time} odds={odds} setOdd={setOdd} />
+        <OddsMarket mk={byKey.first_goal_method} odds={odds} setOdd={setOdd} />
+        <OddsMarket mk={byKey.total_cards} odds={odds} setOdd={setOdd} offSet={offSet} onToggleOff={toggleOff}
+          extra={<CardsLineAdder lines={addLines.total_cards} onAdd={addLine} onDel={delLine} />} />
+        <OddsMarket mk={byKey.own_goal} odds={odds} setOdd={setOdd} />
+      </div>
+
+      <div className="mt-5 mb-2 text-sm font-bold">⚽ Goal Scorers</div>
+      <p className="mb-2 text-[11px] text-stone-500">Add the squad names and set First / Anytime odds per player. The “Other Player” catch-all covers anyone not listed.</p>
       {[["home", match.home, home], ["away", match.away, away]].map(([side, team, list]) => {
         const squad = SQUADS[team] || [];
         return (
@@ -3513,43 +3540,6 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
           <label className="block"><span className="mb-1 block text-[11px] text-stone-500">Anytime Scorer — Other</span>
             <input value={odds.anytime_scorer?.ao ?? "8/1"} onChange={(e) => setOdd("anytime_scorer", "ao", e.target.value)} className={ipt + " text-center"} /></label>
         </div>
-      </div>
-
-      <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-sm font-bold">✨ Custom Match Specials</div>
-          <button onClick={addSpecial} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">
-            <Plus className="h-3.5 w-3.5" /> Add
-          </button>
-        </div>
-        <p className="mb-2 text-[11px] text-stone-500">Add your own Yes/No specials for this match (e.g. “Penalty in the match”, “Red card shown”). Set the label and odds; you'll mark each Won/No at settlement.</p>
-        {specials.length === 0 && <p className="py-2 text-center text-[11px] text-stone-600">No custom specials. Tap Add to create one.</p>}
-        <div className="space-y-2">
-          {specials.map((s, i) => (
-            <div key={s.id} className="flex items-center gap-2">
-              <input value={s.label} onChange={(e) => setSpecial(i, "label", e.target.value)} placeholder="Special label (e.g. Penalty awarded)"
-                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
-              <input value={s.odds} onChange={(e) => setSpecial(i, "odds", e.target.value)} placeholder="2/1"
-                className="w-16 shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-center text-sm outline-none focus:border-emerald-400/50" />
-              <button onClick={() => delSpecial(i)} className="shrink-0 rounded-lg bg-white/5 p-2 text-stone-400 hover:text-rose-400"><X className="h-4 w-4" /></button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-        <div className="mb-1 text-sm font-bold">➕ Add extra options (graded automatically)</div>
-        <p className="mb-2 text-[11px] text-stone-400">Add scores or goal lines not in the default list. These are graded by the same engine — no special handling needed.</p>
-        <ScoreLineAdder label={`Half-Time score`} H={match.home} A={match.away} field="ht" mkey="ht_score" lines={addLines.ht_score} onAdd={addLine} onDel={delLine} />
-        <ScoreLineAdder label={`Full-Time score`} H={match.home} A={match.away} field="ft" mkey="ft_score" lines={addLines.ft_score} onAdd={addLine} onDel={delLine} />
-        <GoalsLineAdder lines={addLines.total_goals} onAdd={addLine} onDel={delLine} />
-      </div>
-
-      <div className="mt-5 mb-2 text-sm font-bold">Odds — other markets</div>
-      <div className="space-y-2">
-        {editable.map((mk) => (
-          <OddsMarket key={mk.key} mk={mk} odds={odds} setOdd={setOdd} />
-        ))}
       </div>
 
       <button onClick={() => setPreview((p) => !p)}
@@ -3735,8 +3725,10 @@ function GoalsLineAdder({ lines = [], onAdd, onDel }) {
   );
 }
 
-function OddsMarket({ mk, odds, setOdd }) {
+function OddsMarket({ mk, odds, setOdd, offSet, onToggleOff, extra }) {
   const [open, setOpen] = useState(false);
+  const deletable = !!onToggleOff;
+  if (!mk) return null;
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
@@ -3745,12 +3737,110 @@ function OddsMarket({ mk, odds, setOdd }) {
       </button>
       {open && (
         <div className="space-y-2 border-t border-white/5 p-3">
-          {mk.selections.map((s) => (
-            <label key={s.id} className="flex items-center justify-between gap-3 text-xs">
-              <span className="min-w-0 flex-1 text-stone-300">{s.label}</span>
-              <input value={odds[mk.key]?.[s.id] ?? s.oddsStr} onChange={(e) => setOdd(mk.key, s.id, e.target.value)}
-                className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-emerald-300 outline-none focus:border-amber-400/60" />
-            </label>
+          {mk.selections.map((s) => {
+            const isOff = offSet?.has(s.id);
+            return (
+              <div key={s.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className={`min-w-0 flex-1 ${isOff ? "text-stone-600 line-through" : "text-stone-300"}`}>{s.label}</span>
+                <input value={odds[mk.key]?.[s.id] ?? s.oddsStr} onChange={(e) => setOdd(mk.key, s.id, e.target.value)} disabled={isOff}
+                  className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-emerald-300 outline-none focus:border-amber-400/60 disabled:opacity-40" />
+                {deletable && (isOff
+                  ? <button onClick={() => onToggleOff(s.id)} className="shrink-0 rounded-md bg-white/5 px-2 py-1.5 text-[10px] font-semibold text-emerald-300">Add back</button>
+                  : <button onClick={() => onToggleOff(s.id)} title="Remove from this match" className="shrink-0 rounded-md bg-white/5 p-1.5 text-stone-400 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>)}
+              </div>
+            );
+          })}
+          {extra}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Match Special editor: built-in specials (odds + remove/restore) + custom specials (add / edit / delete)
+function MatchSpecialEditor({ mk, odds, setOdd, offSet, toggleOff, specials, addSpecial, setSpecial, delSpecial }) {
+  const [open, setOpen] = useState(false);
+  if (!mk) return null;
+  const builtins = mk.selections.filter((s) => s.meta?.sp !== "custom");
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-semibold">
+        <span>{mk.icon} {mk.title}</span>
+        <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-white/5 p-3">
+          <div className="space-y-2">
+            {builtins.map((s) => {
+              const isOff = offSet?.has(s.id);
+              return (
+                <div key={s.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className={`min-w-0 flex-1 ${isOff ? "text-stone-600 line-through" : "text-stone-300"}`}>{s.label}</span>
+                  <input value={odds.specials?.[s.id] ?? s.oddsStr} onChange={(e) => setOdd("specials", s.id, e.target.value)} disabled={isOff}
+                    className="w-20 shrink-0 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-emerald-300 outline-none focus:border-amber-400/60 disabled:opacity-40" />
+                  {isOff
+                    ? <button onClick={() => toggleOff(s.id)} className="shrink-0 rounded-md bg-white/5 px-2 py-1.5 text-[10px] font-semibold text-emerald-300">Add back</button>
+                    : <button onClick={() => toggleOff(s.id)} title="Remove from this match" className="shrink-0 rounded-md bg-white/5 p-1.5 text-stone-400 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>}
+                </div>
+              );
+            })}
+          </div>
+          <div className="border-t border-white/5 pt-2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-stone-400">Custom specials (you grade these Won/No at settlement)</span>
+              <button onClick={addSpecial} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/30"><Plus className="h-3 w-3" /> Add</button>
+            </div>
+            {specials.length === 0 && <p className="py-1 text-center text-[11px] text-stone-600">No custom specials.</p>}
+            <div className="space-y-2">
+              {specials.map((s, i) => (
+                <div key={s.id} className="flex items-center gap-2">
+                  <input value={s.label} onChange={(e) => setSpecial(i, "label", e.target.value)} placeholder="Special label (e.g. Penalty awarded)"
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs outline-none focus:border-emerald-400/50" />
+                  <input value={s.odds} onChange={(e) => setSpecial(i, "odds", e.target.value)} placeholder="2/1"
+                    className="w-16 shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-center text-xs outline-none focus:border-emerald-400/50" />
+                  <button onClick={() => delSpecial(i)} className="shrink-0 rounded-lg bg-white/5 p-2 text-stone-400 hover:text-rose-400"><X className="h-4 w-4" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// add a custom Total Cards line (Exactly N / More than N)
+function CardsLineAdder({ lines = [], onAdd, onDel }) {
+  const [kind, setKind] = useState("eq");
+  const [n, setN] = useState("");
+  const [od, setOd] = useState("");
+  const add = () => {
+    const num = parseInt(n, 10);
+    if (isNaN(num) || num < 0) return;
+    const meta = kind === "eq" ? { c: { eq: num } } : { c: { gt: num } };
+    const label = kind === "eq" ? `Exactly ${num} Card${num === 1 ? "" : "s"}` : `More than ${num} Cards`;
+    onAdd("total_cards", label, meta, od || "10/1");
+    setN(""); setOd("");
+  };
+  return (
+    <div className="mt-1 rounded-lg border border-white/10 bg-black/20 p-2">
+      <div className="mb-1.5 text-[11px] font-semibold text-stone-400">Add a cards line</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs outline-none">
+          <option value="eq">Exactly</option><option value="gt">More than</option>
+        </select>
+        <input value={n} onChange={(e) => setN(e.target.value)} inputMode="numeric" placeholder="#" className="w-14 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-xs outline-none" />
+        <span className="text-[11px] text-stone-500">cards @</span>
+        <input value={od} onChange={(e) => setOd(e.target.value)} placeholder="10/1" className="w-16 rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-center text-xs outline-none" />
+        <button onClick={add} className="rounded-md bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30">Add</button>
+      </div>
+      {lines.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {lines.map((l) => (
+            <span key={l.id} className="flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-[11px] text-stone-300">
+              {l.label} <span className="font-bold text-emerald-300">{l.oddsStr}</span>
+              <button onClick={() => onDel("total_cards", l.id)} className="text-stone-500 hover:text-rose-400"><X className="h-3 w-3" /></button>
+            </span>
           ))}
         </div>
       )}
