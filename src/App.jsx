@@ -163,10 +163,11 @@ function walletCalc(deposit, bonus, myBets) {
   let inBets = 0, won = 0, lost = 0, staked = 0;
   (myBets || []).forEach((b) => {
     staked += b.totalStake;
-    if (b.status === "open") { inBets += b.totalStake; return; }
     (b.items || []).forEach((it) => {
       if (it.status === "won") won += it.stake * it.odds;       // full return on winning selections
       else if (it.status === "lost") lost += it.stake;          // stake lost on losing selections
+      else if (it.status === "open") inBets += it.stake;        // still in play — stake tied up
+      // void: excluded entirely
     });
   });
   return { deposit, bonus, inBets, won, lost, net: deposit + bonus - staked + won };
@@ -576,17 +577,25 @@ const stripPlayer = (p) => p.trim().toLowerCase();
 // selections are decided; then it pays the sum of the winning selections' returns.
 function recomputeBet(bet, resultsMap) {
   const live = bet.items.filter((it) => it.status !== "void");
-  const anyOpen = live.some((it) => !resultsMap[it.matchId]);
-  if (anyOpen) return { items: bet.items.map((it) => it.status === "void" ? it : ({ ...it, status: "open" })), status: "open", payout: 0 };
-  let payout = 0, anyWon = false;
+  // Fantasy slips settle leg-by-leg: a decided leg pays out even while other legs (e.g. Overall) are still pending.
+  // Every other bet type finalizes as one slip — it stays fully open until all legs are decided.
+  const perLeg = bet.kind === "fantasy";
+  if (!perLeg) {
+    const anyOpen = live.some((it) => !resultsMap[it.matchId]);
+    if (anyOpen) return { items: bet.items.map((it) => it.status === "void" ? it : ({ ...it, status: "open" })), status: "open", payout: 0 };
+  }
+  let payout = 0, anyWon = false, anyOpenLeg = false;
   const items = bet.items.map((it) => {
     if (it.status === "void") return it; // voided picks are settled — excluded from grading & payout
-    const won = evaluateItem(it, resultsMap[it.matchId]);
+    const R = resultsMap[it.matchId];
+    if (perLeg && !R) { anyOpenLeg = true; return { ...it, status: "open" }; } // leg not settled yet
+    const won = evaluateItem(it, R);
     if (won) { payout += it.stake * it.odds; anyWon = true; }
     return { ...it, status: won ? "won" : "lost" };
   });
   if (!live.length) return { items, status: "void", payout: 0 }; // whole slip voided
-  return { items, status: anyWon ? "won" : "lost", payout: anyWon ? payout : 0 };
+  const status = anyOpenLeg ? "open" : (anyWon ? "won" : "lost");
+  return { items, status, payout: anyWon ? payout : 0 };
 }
 
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
@@ -2156,9 +2165,16 @@ function Leaderboard({ bets, me }) {
     const map = {};
     bets.forEach((b) => {
       const u = (map[b.user] ||= { nick: b.user, points: 0, openCount: 0, openStake: 0, openPotential: 0 });
-      if (b.status === "won") u.points += Math.round((b.payout || 0) - b.totalStake);
-      else if (b.status === "lost") u.points -= b.totalStake;
-      else if (b.status === "open") { u.openCount++; u.openStake += b.totalStake; u.openPotential += b.potential || 0; }
+      // Tally per leg so a partially-settled fantasy slip still scores its decided legs while
+      // its pending legs show as active. For whole-slip bets this equals the old per-bet maths.
+      let pts = 0, openStake = 0, openPot = 0, hasOpen = false;
+      (b.items || []).forEach((it) => {
+        if (it.status === "won") pts += it.stake * it.odds - it.stake;
+        else if (it.status === "lost") pts -= it.stake;
+        else if (it.status === "open") { hasOpen = true; openStake += it.stake; openPot += it.stake * it.odds; }
+      });
+      u.points += Math.round(pts);
+      if (hasOpen) { u.openCount++; u.openStake += openStake; u.openPotential += openPot; }
     });
     const all = Object.values(map);
     // active ranking by potential winnings from open picks
