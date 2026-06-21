@@ -2367,7 +2367,7 @@ function VoidPanel({ bets, results, configs, voidPick, showToast }) {
 
   const matchList = FIXTURES
     .filter((m) => (picksByMatch[m.n] || []).some(({ b }) => pickShown(m, b)))
-    .sort((a, b) => kickoffMs(a) - kickoffMs(b));
+    .sort((a, b) => kickoffMs(b) - kickoffMs(a)); // latest → oldest
   const groups = { live: [], draft: [], notset: [], notoffered: [], settled: [] };
   matchList.forEach((m) => groups[statusOf(m)].push(m));
 
@@ -3035,7 +3035,7 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
   const ql = q.trim().toLowerCase();
   const sorted = [...FIXTURES]
     .filter((m) => (m.home + m.away).toLowerCase().includes(ql))
-    .sort((a, b) => kickoffMs(a) - kickoffMs(b)); // chronological by kickoff
+    .sort((a, b) => kickoffMs(b) - kickoffMs(a)); // latest → oldest
   const groups = { live: [], draft: [], notset: [], notoffered: [], settled: [] };
   sorted.forEach((m) => groups[statusOf(m)].push(m));
 
@@ -4078,13 +4078,21 @@ function Boosts({ config, wallet, myBets = [], now, nickname, placeBet, showToas
 }
 
 /* ---------- Admin: Special Boosts — add / odds / lock / go-live / download (Odds tab) ---------- */
+const BoostBadge = ({ result }) => {
+  if (!result) return null;
+  const map = { won: ["WON", "bg-emerald-500/20 text-emerald-300"], no: ["NO", "bg-rose-500/20 text-rose-200"], void: ["VOID", "bg-stone-500/25 text-stone-300"] };
+  const [t, c] = map[result] || ["", ""];
+  return <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${c}`}>{t}</span>;
+};
+
 function BoostAdmin({ config, bets, saveConfig, showToast }) {
   const [open, setOpen] = useState(false);
+  const [settledOpen, setSettledOpen] = useState(false);
   const [list, setList] = useState(() => (config?.boosts || []).map((b) => ({ ...b })));
   const [busy, setBusy] = useState(false);
   const add = () => setList((l) => [...l, { id: "bo_" + uid(), label: "", oddsStr: "5/1", lockMs: null, live: false, result: null }]);
-  const setF = (i, k, v) => setList((l) => l.map((x, j) => j === i ? { ...x, [k]: v } : x));
-  const del = (i) => setList((l) => l.filter((_, j) => j !== i));
+  const setF = (id, k, v) => setList((l) => l.map((x) => x.id === id ? { ...x, [k]: v } : x));
+  const del = (id) => setList((l) => l.filter((x) => x.id !== id));
   const backersFor = (id) => bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === id));
   const dl = (b, pdf) => {
     const mb = backersFor(b.id); if (!mb.length) { showToast("No picks on this boost yet", "err"); return; }
@@ -4097,57 +4105,94 @@ function BoostAdmin({ config, bets, saveConfig, showToast }) {
     catch (e) { showToast(e.message || "Save failed (admin only)", "err"); }
     finally { setBusy(false); }
   };
-  const toggleLive = async (i) => {
-    if (!(list[i].label || "").trim()) return showToast("Add a label before going live", "err");
-    const next = list.map((x, j) => j === i ? { ...x, live: !x.live } : x);
+  const toggleLive = async (id) => {
+    const b = list.find((x) => x.id === id);
+    if (!(b.label || "").trim()) return showToast("Add a label before going live", "err");
+    const next = list.map((x) => x.id === id ? { ...x, live: !x.live } : x);
     setList(next);
-    await persist(next, next[i].live ? "Boost is now LIVE for players" : "Boost set to draft");
+    await persist(next, next.find((x) => x.id === id).live ? "Boost is now LIVE for players" : "Boost set to draft");
   };
   const save = async () => {
     for (const b of list) if (!(b.label || "").trim()) return showToast("Every boost needs a label", "err");
     await persist(list, "Special boosts saved");
   };
+
+  const active = list.filter((b) => !b.result);
+  const settled = list.filter((b) => b.result);
+
+  const editCard = (b, idx) => {
+    const backers = backersFor(b.id);
+    const stake = backers.reduce((a, x) => a + x.totalStake, 0);
+    return (
+      <div key={b.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-stone-400">Boost {idx + 1}</span>
+          <button onClick={() => del(b.id)} className="rounded-md bg-white/5 p-1.5 text-stone-400 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
+        </div>
+        <input value={b.label} onChange={(e) => setF(b.id, "label", e.target.value)} placeholder="England, Portugal & Ghana All To Win"
+          className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <label className="block"><span className="mb-1 block text-[10px] uppercase tracking-wide text-stone-500">Boosted odds</span>
+            <input value={b.oddsStr} onChange={(e) => setF(b.id, "oddsStr", e.target.value)} placeholder="6/1" className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-center text-sm outline-none focus:border-emerald-400/50" /></label>
+          <label className="block"><span className="mb-1 block text-[10px] uppercase tracking-wide text-stone-500">Lock time (GMT+6)</span>
+            <input type="datetime-local" value={toLocalInput(b.lockMs)} onChange={(e) => setF(b.id, "lockMs", fromLocalInput(e.target.value))} className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none focus:border-emerald-400/50" /></label>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <button onClick={() => toggleLive(b.id)} disabled={busy} className={`rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${b.live ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{b.live ? "Live" : "Draft"}</button>
+          <span className="text-[11px] text-stone-500">{backers.length} picks · {money(stake)}</span>
+          <span className="ml-auto flex gap-1">
+            <button onClick={() => dl(b, false)} title="Excel" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
+            <button onClick={() => dl(b, true)} title="PDF" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const settledCard = (b) => {
+    const backers = backersFor(b.id);
+    const stake = backers.reduce((a, x) => a + x.totalStake, 0);
+    return (
+      <div key={b.id} className="rounded-xl border border-white/10 bg-black/10 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2"><span className="truncate text-sm font-semibold">{b.label}</span><BoostBadge result={b.result} /></div>
+            <div className="text-[11px] text-stone-500">{b.oddsStr} · {backers.length} picks · {money(stake)}</div>
+          </div>
+          <span className="flex shrink-0 gap-1">
+            <button onClick={() => dl(b, false)} title="Excel" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
+            <button onClick={() => dl(b, true)} title="PDF" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
+            <button onClick={() => del(b.id)} title="Remove" className="rounded-md bg-white/5 p-1.5 text-stone-400 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
-        <span>⚡ Special Boosts <span className="text-[11px] font-normal text-stone-500">({list.length})</span></span>
+        <span>⚡ Special Boosts <span className="text-[11px] font-normal text-stone-500">({active.length} active)</span></span>
         <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
       </button>
       {open && (
         <div className="border-t border-white/5 p-3">
-          <p className="mb-2 text-[11px] text-stone-500">Build accumulators (e.g. “England, Portugal &amp; Ghana All To Win”). Set boosted odds + a lock time (GMT+6), then flip <b>Live</b> to publish it instantly to players. <b>Save Boosts</b> keeps edits to drafts. Settle Won/No in the Settle tab.</p>
+          <p className="mb-2 text-[11px] text-stone-500">Build accumulators (e.g. “England, Portugal &amp; Ghana All To Win”). Set boosted odds + a lock time (GMT+6), then flip <b>Live</b> to publish it instantly to players. <b>Save Boosts</b> keeps edits to drafts. Settle Won/No in the Settle tab — settled boosts move to the Settled folder below.</p>
           <div className="space-y-3">
-            {list.map((b, i) => {
-              const backers = backersFor(b.id);
-              const stake = backers.reduce((a, x) => a + x.totalStake, 0);
-              return (
-                <div key={b.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold text-stone-400">Boost {i + 1}{b.result ? ` · ${b.result === "won" ? "WON" : "NO"}` : ""}</span>
-                    <button onClick={() => del(i)} className="rounded-md bg-white/5 p-1.5 text-stone-400 hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
-                  </div>
-                  <input value={b.label} onChange={(e) => setF(i, "label", e.target.value)} placeholder="England, Portugal & Ghana All To Win"
-                    className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/50" />
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <label className="block"><span className="mb-1 block text-[10px] uppercase tracking-wide text-stone-500">Boosted odds</span>
-                      <input value={b.oddsStr} onChange={(e) => setF(i, "oddsStr", e.target.value)} placeholder="6/1" className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-center text-sm outline-none focus:border-emerald-400/50" /></label>
-                    <label className="block"><span className="mb-1 block text-[10px] uppercase tracking-wide text-stone-500">Lock time (GMT+6)</span>
-                      <input type="datetime-local" value={toLocalInput(b.lockMs)} onChange={(e) => setF(i, "lockMs", fromLocalInput(e.target.value))} className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs outline-none focus:border-emerald-400/50" /></label>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <button onClick={() => toggleLive(i)} disabled={busy} className={`rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${b.live ? "bg-emerald-400 text-black" : "bg-white/5 text-stone-400"}`}>{b.live ? "Live" : "Draft"}</button>
-                    <span className="text-[11px] text-stone-500">{backers.length} picks · {money(stake)}</span>
-                    <span className="ml-auto flex gap-1">
-                      <button onClick={() => dl(b, false)} title="Excel" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><BarChart3 className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => dl(b, true)} title="PDF" className="rounded-md bg-white/5 p-1.5 text-emerald-300 hover:bg-white/10"><Receipt className="h-3.5 w-3.5" /></button>
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+            {active.map((b, i) => editCard(b, i))}
           </div>
           <button onClick={add} className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-500/20 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30"><Plus className="h-3.5 w-3.5" /> Add a boost</button>
           <button onClick={save} disabled={busy} className="mt-2 w-full rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-2.5 text-sm font-bold text-black disabled:opacity-50">{busy ? "Saving…" : "Save Boosts"}</button>
+
+          {settled.length > 0 && (
+            <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+              <button onClick={() => setSettledOpen(!settledOpen)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs font-bold text-stone-300">
+                <span>✅ Settled <span className="font-normal text-stone-500">({settled.length})</span></span>
+                <ChevronRight className={`h-3.5 w-3.5 transition ${settledOpen ? "rotate-90" : ""}`} />
+              </button>
+              {settledOpen && <div className="space-y-2 border-t border-white/5 p-2">{settled.map(settledCard)}</div>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -4157,10 +4202,13 @@ function BoostAdmin({ config, bets, saveConfig, showToast }) {
 /* ---------- Admin: settle Special Boosts Won / No (Settle tab) ---------- */
 function BoostSettle({ config, bets, settleBoost, resetBoost, voidBoost, showToast }) {
   const [open, setOpen] = useState(false);
+  const [settledOpen, setSettledOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [voiding, setVoiding] = useState(null); // { id, label } pending void
   const [reason, setReason] = useState("");
-  const shown = (config?.boosts || []).filter((b) => b.live || b.result);
+  const all = config?.boosts || [];
+  const pending = all.filter((b) => b.live && !b.result);
+  const settled = all.filter((b) => b.result);
   const backers = (id) => bets.filter((b) => b.kind === "boost" && b.items.some((it) => it.boostId === id));
   const act = async (fn) => { setBusy(true); try { await fn(); } catch (e) { showToast(e.message || "Failed", "err"); } finally { setBusy(false); } };
   const confirmVoid = async () => {
@@ -4168,36 +4216,60 @@ function BoostSettle({ config, bets, settleBoost, resetBoost, voidBoost, showToa
     await act(() => voidBoost(voiding.id, reason.trim()));
     setVoiding(null); setReason("");
   };
-  if (!shown.length) return null;
+  if (!pending.length && !settled.length) return null;
+
+  const meta = (b) => { const l = backers(b.id); return { n: l.length, stake: l.reduce((a, x) => a + x.totalStake, 0) }; };
+
   return (
     <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold">
-        <span>⚡ Special Boosts <span className="text-[11px] font-normal text-stone-500">({shown.length})</span></span>
+        <span>⚡ Special Boosts <span className="text-[11px] font-normal text-stone-500">({pending.length} to settle)</span></span>
         <ChevronRight className={`h-4 w-4 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
       </button>
       {open && (
         <div className="space-y-2 border-t border-white/5 p-3">
-          {shown.map((b) => {
-            const list = backers(b.id);
-            const stake = list.reduce((a, x) => a + x.totalStake, 0);
-            const voided = b.result === "void";
+          {pending.length === 0 && <p className="py-3 text-center text-[11px] text-stone-500">Nothing to settle right now.</p>}
+          {pending.map((b) => {
+            const { n, stake } = meta(b);
             return (
               <div key={b.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
                 <div className="text-sm font-semibold">{b.label}</div>
-                <div className="text-[11px] text-stone-500">{b.oddsStr} · {list.length} picks · {money(stake)}{b.result ? ` · ${b.result === "won" ? "settled WON" : b.result === "no" ? "settled NO" : "VOIDED (refunded)"}` : ""}</div>
-                {voided ? (
-                  <div className="mt-2 rounded-lg bg-stone-500/15 px-3 py-2 text-[11px] font-semibold text-stone-300">🚫 Voided — all stakes refunded. This boost no longer counts on the leaderboard.</div>
-                ) : (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "won"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "won" ? "bg-emerald-400 text-black" : "bg-emerald-500/20 text-emerald-300"}`}>Won (pay out)</button>
-                    <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "no"))} className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-50 ${b.result === "no" ? "bg-rose-500 text-white" : "bg-rose-500/15 text-rose-200"}`}>No</button>
-                    {b.result && <button disabled={busy} onClick={() => act(() => resetBoost(b.id))} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-300 disabled:opacity-50">Reset</button>}
-                    <button disabled={busy} onClick={() => { setVoiding({ id: b.id, label: b.label }); setReason(""); }} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-400 hover:text-rose-300 disabled:opacity-50">Void</button>
-                  </div>
-                )}
+                <div className="text-[11px] text-stone-500">{b.oddsStr} · {n} picks · {money(stake)}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "won"))} className="flex-1 rounded-lg bg-emerald-500/20 py-2 text-xs font-bold text-emerald-300 disabled:opacity-50">Won (pay out)</button>
+                  <button disabled={busy} onClick={() => act(() => settleBoost(b.id, "no"))} className="flex-1 rounded-lg bg-rose-500/15 py-2 text-xs font-bold text-rose-200 disabled:opacity-50">No</button>
+                  <button disabled={busy} onClick={() => { setVoiding({ id: b.id, label: b.label }); setReason(""); }} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-400 hover:text-rose-300 disabled:opacity-50">Void</button>
+                </div>
               </div>
             );
           })}
+
+          {settled.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+              <button onClick={() => setSettledOpen(!settledOpen)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs font-bold text-stone-300">
+                <span>✅ Settled <span className="font-normal text-stone-500">({settled.length})</span></span>
+                <ChevronRight className={`h-3.5 w-3.5 transition ${settledOpen ? "rotate-90" : ""}`} />
+              </button>
+              {settledOpen && (
+                <div className="space-y-2 border-t border-white/5 p-2">
+                  {settled.map((b) => {
+                    const { n, stake } = meta(b);
+                    return (
+                      <div key={b.id} className="rounded-xl border border-white/10 bg-black/10 p-3">
+                        <div className="flex items-center gap-2"><span className="truncate text-sm font-semibold">{b.label}</span><BoostBadge result={b.result} /></div>
+                        <div className="text-[11px] text-stone-500">{b.oddsStr} · {n} picks · {money(stake)}{b.result === "void" ? " · stakes refunded" : ""}</div>
+                        {b.result === "void" ? (
+                          <div className="mt-2 rounded-lg bg-stone-500/15 px-3 py-1.5 text-[11px] font-semibold text-stone-300">🚫 Voided — refunded, off the leaderboard</div>
+                        ) : (
+                          <button disabled={busy} onClick={() => act(() => resetBoost(b.id))} className="mt-2 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-stone-300 disabled:opacity-50">Reset to unsettled</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       {voiding && (
