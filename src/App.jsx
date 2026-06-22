@@ -3038,6 +3038,8 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
     .sort((a, b) => kickoffMs(b) - kickoffMs(a)); // latest → oldest
   const groups = { live: [], draft: [], notset: [], notoffered: [], settled: [] };
   sorted.forEach((m) => groups[statusOf(m)].push(m));
+  // Odds tab only: list "Not set" matches soonest → furthest, so the most imminent unset matches are first.
+  if (manage) groups.notset.sort((a, b) => kickoffMs(a) - kickoffMs(b));
 
   const SECTIONS = [
     ["live", "Live", "bg-sky-500/20 text-sky-300"],
