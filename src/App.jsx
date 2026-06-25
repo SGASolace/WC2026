@@ -1499,7 +1499,7 @@ function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], config
       if (s.stake < RULES.min) return `Min stake is ${money(RULES.min)} per selection`;
       if (s.stake > RULES.max) return `Max stake is ${money(RULES.max)} per selection`;
       if (s.meta?.scorer === "__OTHER__" && !(s.customName || "").trim()) return "Choose the player for your “Other Player” pick";
-      if ((s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && !(s.customName || "").trim()) return "Type the score for your “Other Score” pick";
+      if ((s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && !/^\d+-\d+$/.test((s.customName || "").replace(/\s/g, ""))) return "Enter both goal numbers for your “Other Score” pick";
       const dup = otherDuplicateMsg(s, configs);
       if (dup) return dup;
     }
@@ -1604,11 +1604,31 @@ function BetSlip({ slip, setSlip, user, placeBet, available, myBets = [], config
                         className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
                     )
                   )}
-                  {(s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && (
-                    <input value={s.customName || ""} onChange={(e) => setCustomName(s.selId, s.matchId, e.target.value)}
-                      placeholder="Type the score, e.g. 4-2 (home-away)"
-                      className="mt-2 w-full rounded-lg border border-amber-400/40 bg-black/30 px-2.5 py-1.5 text-xs outline-none placeholder:text-stone-600 focus:border-amber-400" />
-                  )}
+                  {(s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__") && (() => {
+                    const [hm, aw] = (s.match || "Home v Away").split(" v ");
+                    const parts = (s.customName || "").split("-");
+                    const ch = /^\d+$/.test(parts[0]) ? parts[0] : "";
+                    const ca = /^\d+$/.test(parts[1]) ? parts[1] : "";
+                    const setPart = (h, a) => setCustomName(s.selId, s.matchId, `${h}-${a}`);
+                    return (
+                      <div className="mt-2">
+                        <div className="mb-1 text-[10px] text-amber-300/80">Enter the exact score (goals for each team)</div>
+                        <div className="flex items-end gap-2">
+                          <label className="min-w-0 flex-1">
+                            <span className="mb-0.5 block truncate text-[10px] text-stone-500">{hm}</span>
+                            <input type="number" min="0" inputMode="numeric" value={ch} onChange={(e) => setPart(e.target.value.replace(/\D/g, ""), ca)}
+                              className="w-full rounded-lg border border-amber-400/40 bg-black/30 px-2 py-1.5 text-center text-sm outline-none focus:border-amber-400" />
+                          </label>
+                          <span className="pb-1.5 font-display text-lg text-stone-600">–</span>
+                          <label className="min-w-0 flex-1">
+                            <span className="mb-0.5 block truncate text-[10px] text-stone-500">{aw}</span>
+                            <input type="number" min="0" inputMode="numeric" value={ca} onChange={(e) => setPart(ch, e.target.value.replace(/\D/g, ""))}
+                              className="w-full rounded-lg border border-amber-400/40 bg-black/30 px-2 py-1.5 text-center text-sm outline-none focus:border-amber-400" />
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="rounded-md bg-white/10 px-2 py-1 text-xs font-bold text-emerald-300">@ {s.oddsStr}</span>
                     <div className="flex items-center gap-1.5">
