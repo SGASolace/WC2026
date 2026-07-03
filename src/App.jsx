@@ -1056,6 +1056,16 @@ export default function App() {
   const ogConfig = configs[-1];
   const fmConfig = configs[-2];
 
+  const stakeSum = (bs) => bs.reduce((a, b) => a + (b.totalStake || 0), 0);
+  let myWL = 0;
+  allMine.forEach((b) => (b.items || []).forEach((it) => { myWL += itemPL(b, it); }));
+  const summary = {
+    dep: Number(profile.deposit || 0) + Number(profile.og_deposit || 0),
+    bon: Number(profile.bonus || 0) + Number(profile.og_bonus || 0),
+    match: stakeSum(myMatchBets), out: stakeSum(myOgBets), boost: stakeSum(myBoostBets), fan: stakeSum(myFantasyBets),
+    wl: myWL, inb: wallet.inBets + ogWallet.inBets, net: wallet.net + ogWallet.net,
+  };
+
   return (
     <div className={dark ? "dark" : ""}>
       <style>{FONTS}</style>
@@ -1075,7 +1085,7 @@ export default function App() {
                 {tab === "outrights" && <Outrights config={ogConfig} wallet={ogWallet} slip={ogSlip} setSlip={setOgSlip} now={now} ogBets={myOgBets} nickname={profile.nickname} />}
                 {tab === "fantasy" && <Fantasy config={fmConfig} wallet={wallet} results={results} slip={fmSlip} setSlip={setFmSlip} fmBets={myFantasyBets} nickname={profile.nickname} />}
                 {tab === "boosts" && <Boosts config={configs[-3]} wallet={wallet} myBets={myBoostBets} now={now} nickname={profile.nickname} placeBet={placeBet} showToast={showToast} />}
-                {tab === "mybets" && <MyBets bets={myMatchBets} wallet={wallet} nickname={profile.nickname} txns={txns} />}
+                {tab === "mybets" && <MyBets bets={myMatchBets} wallet={wallet} nickname={profile.nickname} txns={txns} summary={summary} />}
                 {tab === "board" && <Leaderboard bets={matchBets} me={profile.nickname} />}
               </>
             )}
@@ -2078,7 +2088,7 @@ function FantasySlip({ slip, setSlip, user, placeBet, available, myBets = [], sh
 }
 
 /* ---------- My Picks + Wallet ---------- */
-function MyBets({ bets, wallet, nickname, txns }) {
+function MyBets({ bets, wallet, nickname, txns, summary }) {
   const [f, setF] = useState("all");
   const [showHist, setShowHist] = useState(false);
   const filtered = bets.filter((b) => f === "all" || b.status === f);
@@ -2112,6 +2122,34 @@ function MyBets({ bets, wallet, nickname, txns }) {
         <Stat label="Lost" v={money(wallet.lost)} />
         <Stat label="Net Balance" v={money(wallet.net)} good={wallet.net >= 0} />
       </div>
+
+      {summary && (
+        <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-emerald-400/70">Overall balance · all wallets combined</div>
+          <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 text-sm">
+            {[
+              ["Total deposit", money(summary.dep), "text-white"],
+              ["Bonus", money(summary.bon), "text-emerald-300"],
+              ["Match bets", money(summary.match), "text-white"],
+              ["Outright bets", money(summary.out), "text-white"],
+              ["Boosts", money(summary.boost), "text-white"],
+              ["Fantasy manager", money(summary.fan), "text-white"],
+              ["Win / Loss", `${summary.wl >= 0 ? "+" : "−"}${money(Math.abs(summary.wl))}`, summary.wl >= 0 ? "text-emerald-300" : "text-rose-300"],
+              ["Coins in bets", money(summary.inb), "text-amber-300"],
+            ].map(([k, v, cls]) => (
+              <div key={k} className="flex items-center justify-between gap-2 border-b border-white/5 pb-1.5">
+                <span className="text-stone-400">{k}</span>
+                <span className={`font-semibold tabular-nums ${cls}`}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+            <span className="text-sm font-semibold text-stone-300">Net balance</span>
+            <span className={`font-display text-2xl ${summary.net >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(summary.net)}</span>
+          </div>
+          <p className="mt-2 text-[10px] text-stone-500">Net = deposit + bonus + win/loss − coins in bets. Includes your match, outright, boost and fantasy wallets.</p>
+        </div>
+      )}
 
       <div className="mb-4 flex items-center gap-2">
         <button onClick={() => setShowHist(!showHist)}
