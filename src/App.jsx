@@ -626,6 +626,25 @@ const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
 // realized profit/loss for one selection: won → stake×(odds−1); lost → −stake; open → 0 (pending)
 const itemPL = (bet, it) => it.status === "won" ? it.stake * (it.odds - 1) : it.status === "lost" ? -it.stake : 0;
 
+// One player's overall position across every wallet & bet kind. Used by the player's own
+// wallet screen and the admin Profiles tab so the two always show identical numbers.
+// `allMine` = every bet belonging to this player (all kinds).
+function playerSummary(profile, allMine) {
+  const bs = allMine || [];
+  const nonOg = bs.filter((b) => b.kind !== "outright");
+  const og = bs.filter((b) => b.kind === "outright");
+  const stakeOf = (k) => bs.filter((b) => (b.kind || "match") === k).reduce((a, b) => a + (b.totalStake || 0), 0);
+  let wl = 0, inb = 0;
+  bs.forEach((b) => (b.items || []).forEach((it) => { wl += itemPL(b, it); if (it.status === "open") inb += it.stake; }));
+  const w = walletOf(profile, nonOg), o = walletOg(profile, og);
+  return {
+    dep: Number(profile?.deposit || 0) + Number(profile?.og_deposit || 0),
+    bon: Number(profile?.bonus || 0) + Number(profile?.og_bonus || 0),
+    match: stakeOf("match"), out: stakeOf("outright"), boost: stakeOf("boost"), fan: stakeOf("fantasy"),
+    wl, inb, net: w.net + o.net,
+  };
+}
+
 // display text for a pick's selection — appends GK/DF/MD/FWD for scorer picks (even older ones
 // whose stored label predates positions), and shows the chosen name for "Other …" picks
 function selDisplay(it) {
@@ -1056,15 +1075,7 @@ export default function App() {
   const ogConfig = configs[-1];
   const fmConfig = configs[-2];
 
-  const stakeSum = (bs) => bs.reduce((a, b) => a + (b.totalStake || 0), 0);
-  let myWL = 0;
-  allMine.forEach((b) => (b.items || []).forEach((it) => { myWL += itemPL(b, it); }));
-  const summary = {
-    dep: Number(profile.deposit || 0) + Number(profile.og_deposit || 0),
-    bon: Number(profile.bonus || 0) + Number(profile.og_bonus || 0),
-    match: stakeSum(myMatchBets), out: stakeSum(myOgBets), boost: stakeSum(myBoostBets), fan: stakeSum(myFantasyBets),
-    wl: myWL, inb: wallet.inBets + ogWallet.inBets, net: wallet.net + ogWallet.net,
-  };
+  const summary = playerSummary(profile, allMine);
 
   return (
     <div className={dark ? "dark" : ""}>
@@ -2088,6 +2099,38 @@ function FantasySlip({ slip, setSlip, user, placeBet, available, myBets = [], sh
 }
 
 /* ---------- My Picks + Wallet ---------- */
+function BalanceBreakdown({ summary, title = "Overall balance · all wallets combined" }) {
+  if (!summary) return null;
+  const rows = [
+    ["Total deposit", money(summary.dep), "text-white"],
+    ["Bonus", money(summary.bon), "text-emerald-300"],
+    ["Match bets", money(summary.match), "text-white"],
+    ["Outright bets", money(summary.out), "text-white"],
+    ["Boosts", money(summary.boost), "text-white"],
+    ["Fantasy manager", money(summary.fan), "text-white"],
+    ["Win / Loss", `${summary.wl >= 0 ? "+" : "−"}${money(Math.abs(summary.wl))}`, summary.wl >= 0 ? "text-emerald-300" : "text-rose-300"],
+    ["Coins in bets", money(summary.inb), "text-amber-300"],
+  ];
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-emerald-400/70">{title}</div>
+      <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 text-sm">
+        {rows.map(([k, v, cls]) => (
+          <div key={k} className="flex items-center justify-between gap-2 border-b border-white/5 pb-1.5">
+            <span className="text-stone-400">{k}</span>
+            <span className={`font-semibold tabular-nums ${cls}`}>{v}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+        <span className="text-sm font-semibold text-stone-300">Net balance</span>
+        <span className={`font-display text-2xl ${summary.net >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(summary.net)}</span>
+      </div>
+      <p className="mt-2 text-[10px] text-stone-500">Net = deposit + bonus + win/loss − coins in bets. Includes match, outright, boost &amp; fantasy wallets.</p>
+    </div>
+  );
+}
+
 function MyBets({ bets, wallet, nickname, txns, summary }) {
   const [f, setF] = useState("all");
   const [showHist, setShowHist] = useState(false);
@@ -2123,33 +2166,7 @@ function MyBets({ bets, wallet, nickname, txns, summary }) {
         <Stat label="Net Balance" v={money(wallet.net)} good={wallet.net >= 0} />
       </div>
 
-      {summary && (
-        <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-emerald-400/70">Overall balance · all wallets combined</div>
-          <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 text-sm">
-            {[
-              ["Total deposit", money(summary.dep), "text-white"],
-              ["Bonus", money(summary.bon), "text-emerald-300"],
-              ["Match bets", money(summary.match), "text-white"],
-              ["Outright bets", money(summary.out), "text-white"],
-              ["Boosts", money(summary.boost), "text-white"],
-              ["Fantasy manager", money(summary.fan), "text-white"],
-              ["Win / Loss", `${summary.wl >= 0 ? "+" : "−"}${money(Math.abs(summary.wl))}`, summary.wl >= 0 ? "text-emerald-300" : "text-rose-300"],
-              ["Coins in bets", money(summary.inb), "text-amber-300"],
-            ].map(([k, v, cls]) => (
-              <div key={k} className="flex items-center justify-between gap-2 border-b border-white/5 pb-1.5">
-                <span className="text-stone-400">{k}</span>
-                <span className={`font-semibold tabular-nums ${cls}`}>{v}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-            <span className="text-sm font-semibold text-stone-300">Net balance</span>
-            <span className={`font-display text-2xl ${summary.net >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{money(summary.net)}</span>
-          </div>
-          <p className="mt-2 text-[10px] text-stone-500">Net = deposit + bonus + win/loss − coins in bets. Includes your match, outright, boost and fantasy wallets.</p>
-        </div>
-      )}
+      {summary && <div className="mb-4"><BalanceBreakdown summary={summary} /></div>}
 
       <div className="mb-4 flex items-center gap-2">
         <button onClick={() => setShowHist(!showHist)}
@@ -2329,6 +2346,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
     fantasy: [["Players", nPlayers], ["Fantasy Entries", f.n], ["Fantasy Stakes", money(f.stake)], ["Fantasy Payouts", money(f.payout), true], ["Settled Matchdays", `${settledFmMd}/9`], ["Fantasy Pool P/L", money(pl(f)), pl(f) >= 0]],
     players: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Settled Matches", `${settledMatches}/72`], ["Settled Fantasy MDs", `${settledFmMd}/9`], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
     void: [["Players", nPlayers], ["Total Slips", all.n], ["Open Slips", bets.filter((b) => b.status === "open").length], ["Voided Picks", bets.reduce((a, b) => a + b.items.filter((it) => it.status === "void").length, 0)]],
+    profiles: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
   };
   const stats = STAT[mode] || STAT.settle;
   const showMatchExport = mode === "settle" || mode === "manage";
@@ -2361,8 +2379,8 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-6 gap-1.5 rounded-xl bg-black/30 p-1">
-        {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["fantasy", "Fantasy", Users], ["players", "Coins", Wallet], ["void", "Void", Ban]].map(([k, lbl, Icon]) => (
+      <div className="mb-4 grid grid-cols-4 gap-1.5 rounded-xl bg-black/30 p-1">
+        {[["settle", "Settle", Settings], ["manage", "Odds", ListChecks], ["outrights", "Outrights", Trophy], ["fantasy", "Fantasy", Users], ["players", "Coins", Wallet], ["void", "Void", Ban], ["profiles", "Profiles", TrendingUp]].map(([k, lbl, Icon]) => (
           <button key={k} onClick={() => switchMode(k)}
             className={`flex flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[10px] font-semibold transition ${mode === k ? "bg-gradient-to-r from-amber-400 to-emerald-400 text-black" : "text-stone-400"}`}>
             <Icon className="h-4 w-4" /> {lbl}
@@ -2407,6 +2425,8 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
         <FantasyAdmin config={configs[-2]} results={results} bets={bets} saveConfig={saveConfig} settleFantasy={settleFantasy} resetFantasy={resetFantasy} showToast={showToast} />
       ) : mode === "void" ? (
         <VoidPanel bets={bets} results={results} configs={configs} voidPick={voidPick} showToast={showToast} />
+      ) : mode === "profiles" ? (
+        <ProfilesPanel players={players} bets={bets} />
       ) : (
         <PlayersPanel players={players} bets={bets} txns={txns} creditPlayer={creditPlayer} creditPlayerOg={creditPlayerOg} resetAll={resetAll} showToast={showToast} />
       )}
@@ -2415,6 +2435,37 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
 }
 
 /* ---------- Admin: void a single pick (refund + exclude from settlement) ---------- */
+function ProfilesPanel({ players, bets }) {
+  const [q, setQ] = useState("");
+  const list = players
+    .filter((p) => !p.is_admin)
+    .map((p) => ({ p, s: playerSummary(p, bets.filter((b) => b.userId === p.id)) }))
+    .filter(({ p }) => (p.nickname + " " + (p.full_name || "")).toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => b.s.net - a.s.net);
+  return (
+    <div>
+      <SectionTitle icon={<TrendingUp className="h-5 w-5" />} title="Player Profiles" sub="Each player's overall balance across all wallets — the same view the player sees" />
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a player…"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
+      </div>
+      {list.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No players found.</p>}
+      <div className="space-y-3">
+        {list.map(({ p, s }) => (
+          <div key={p.id}>
+            <div className="mb-1.5 flex items-center gap-2 px-1">
+              <span className="text-sm font-bold text-white">👤 {p.nickname}</span>
+              {p.full_name && <span className="text-[11px] text-stone-500">{p.full_name}</span>}
+            </div>
+            <BalanceBreakdown summary={s} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function VoidPanel({ bets, results, configs, voidPick, showToast }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState({}); // all status groups collapsed by default
