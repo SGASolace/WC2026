@@ -2435,6 +2435,22 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
 }
 
 /* ---------- Admin: void a single pick (refund + exclude from settlement) ---------- */
+function ProfileRow({ p, s }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-emerald-400/30">
+        <span className="flex min-w-0 items-center gap-2">
+          <ChevronRight className={`h-4 w-4 shrink-0 text-stone-500 transition ${open ? "rotate-90" : ""}`} />
+          <span className="truncate text-sm font-bold text-white">👤 {p.nickname}{p.full_name ? <span className="ml-1 text-[11px] font-normal text-stone-500">{p.full_name}</span> : null}</span>
+        </span>
+        <span className={`shrink-0 rounded px-2 py-1 text-[11px] font-bold ${s.net >= 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>Net {money(s.net)}</span>
+      </button>
+      {open && <div className="mt-2"><BalanceBreakdown summary={s} /></div>}
+    </div>
+  );
+}
+
 function ProfilesPanel({ players, bets }) {
   const [q, setQ] = useState("");
   const list = players
@@ -2444,23 +2460,15 @@ function ProfilesPanel({ players, bets }) {
     .sort((a, b) => b.s.net - a.s.net);
   return (
     <div>
-      <SectionTitle icon={<TrendingUp className="h-5 w-5" />} title="Player Profiles" sub="Each player's overall balance across all wallets — the same view the player sees" />
+      <SectionTitle icon={<TrendingUp className="h-5 w-5" />} title="Player Profiles" sub="Tap a player for their overall balance across all wallets — the same view the player sees" />
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a player…"
           className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-stone-600 focus:border-emerald-400/50" />
       </div>
       {list.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No players found.</p>}
-      <div className="space-y-3">
-        {list.map(({ p, s }) => (
-          <div key={p.id}>
-            <div className="mb-1.5 flex items-center gap-2 px-1">
-              <span className="text-sm font-bold text-white">👤 {p.nickname}</span>
-              {p.full_name && <span className="text-[11px] text-stone-500">{p.full_name}</span>}
-            </div>
-            <BalanceBreakdown summary={s} />
-          </div>
-        ))}
+      <div className="space-y-2.5">
+        {list.map(({ p, s }) => <ProfileRow key={p.id} p={p} s={s} />)}
       </div>
     </div>
   );
