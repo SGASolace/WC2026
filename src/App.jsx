@@ -620,7 +620,7 @@ function recomputeBet(bet, resultsMap) {
 }
 
 /* ---------- exports (CSV for Excel, print-to-PDF) ---------- */
-const matchName = (id) => { if (+id === -1) return "Tournament Outrights"; const fc = FM_CATS.find((c) => c.mid === +id); if (fc) return `Fantasy Manager — ${fc.label}`; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
+const matchName = (id) => { if (id == null || Number.isNaN(Number(id))) return "Special Boosts"; if (+id === -1) return "Tournament Outrights"; const fc = FM_CATS.find((c) => c.mid === +id); if (fc) return `Fantasy Manager — ${fc.label}`; const m = FIXTURES.find((f) => f.n === id); return m ? `${m.home} v ${m.away}` : `Match ${id}`; };
 const fmtN = (n) => Math.round(n).toLocaleString();
 const signed = (n) => `${n >= 0 ? "+" : "−"}${fmtN(Math.abs(n))}`;
 // realized profit/loss for one selection: won → stake×(odds−1); lost → −stake; open → 0 (pending)
@@ -3028,6 +3028,25 @@ function PlayerCredit({ p, myBets, myOgBets, myTxns, creditPlayer, creditPlayerO
 
       {open && (
         <div className="mt-3">
+          <div className="mb-3 flex gap-2">
+            {(() => {
+              const all = [...(myBets || []), ...(myOgBets || [])];
+              const safe = (p.nickname || "player").replace(/[^\w.-]+/g, "_");
+              const guard = (fn) => () => { if (!all.length) { showToast("No picks to export for this player", "err"); return; } fn(); };
+              return (
+                <>
+                  <button onClick={guard(() => printPicks(all, `${p.nickname} — All Picks (match-wise)`, true))}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-200 hover:bg-white/10">
+                    <Receipt className="h-3.5 w-3.5 text-emerald-300" /> PDF
+                  </button>
+                  <button onClick={guard(() => exportPicksCSV(all, `SGA_WC2026_${safe}_all_picks.csv`, true))}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-stone-200 hover:bg-white/10">
+                    <BarChart3 className="h-3.5 w-3.5 text-emerald-300" /> Excel (CSV)
+                  </button>
+                </>
+              );
+            })()}
+          </div>
           <CreditBlock title="Match wallet" color="text-emerald-300" wallet={w} showToast={showToast}
             onCredit={(a, b, note) => creditPlayer(p, a, b, note).then(() => showToast(`Match +${money(a + b)} (${note}) → ${p.nickname}`))}
             onExtract={(a, note) => creditPlayer(p, -a, 0, note).then(() => showToast(`Match −${money(a)} extracted (${note}) ← ${p.nickname}`))} />
