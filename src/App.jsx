@@ -3010,6 +3010,7 @@ function FantasyAdmin({ config, results, bets, saveConfig, settleFantasy, resetF
 function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, resetAll, showToast }) {
   const list = players.filter((p) => !p.is_admin);
   const [armed, setArmed] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
   const [word, setWord] = useState("");
   const [busy, setBusy] = useState(false);
   const doReset = async () => {
@@ -3055,27 +3056,37 @@ function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, reset
           : k === "bon" ? <span className="text-emerald-300/80">{fmtN(v)}</span>
           : <span className="text-stone-200">{fmtN(v)}</span>;
         return (
-          <div className="mb-4 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.02]">
-            <table className="w-full min-w-[720px] text-[11px]">
-              <thead>
-                <tr className="text-stone-400">
-                  <th className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-semibold">Player</th>
-                  {cols.map(([k, lbl]) => <th key={k} className="whitespace-nowrap px-2.5 py-2 text-right font-semibold">{lbl}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.p.id} className="border-t border-white/5">
-                    <td className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-semibold text-white"><span className="whitespace-nowrap">{r.p.nickname}</span></td>
-                    {cols.map(([k]) => <td key={k} className="px-2.5 py-2 text-right tabular-nums">{cell(k, r[k])}</td>)}
-                  </tr>
-                ))}
-                <tr className="border-t border-white/10 bg-white/[0.04]">
-                  <td className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-bold text-stone-300">All players</td>
-                  {cols.map(([k]) => <td key={k} className="px-2.5 py-2 text-right font-bold tabular-nums">{cell(k, tot[k])}</td>)}
-                </tr>
-              </tbody>
-            </table>
+          <div className="mb-4">
+            <button onClick={() => setTableOpen(!tableOpen)} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-emerald-400/30">
+              <span className="flex items-center gap-2 text-sm font-semibold text-stone-200">
+                <BarChart3 className="h-4 w-4 text-emerald-300" /> Balance overview · {rows.length} players
+              </span>
+              <ChevronRight className={`h-4 w-4 text-stone-500 transition ${tableOpen ? "rotate-90" : ""}`} />
+            </button>
+            {tableOpen && (
+              <div className="mt-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.02]">
+                <table className="w-full min-w-[720px] text-[11px]">
+                  <thead>
+                    <tr className="text-stone-400">
+                      <th className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-semibold">Player</th>
+                      {cols.map(([k, lbl]) => <th key={k} className="whitespace-nowrap px-2.5 py-2 text-right font-semibold">{lbl}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.p.id} className="border-t border-white/5">
+                        <td className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-semibold text-white"><span className="whitespace-nowrap">{r.p.nickname}</span></td>
+                        {cols.map(([k]) => <td key={k} className="px-2.5 py-2 text-right tabular-nums">{cell(k, r[k])}</td>)}
+                      </tr>
+                    ))}
+                    <tr className="border-t border-white/10 bg-white/[0.04]">
+                      <td className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-bold text-stone-300">All players</td>
+                      {cols.map(([k]) => <td key={k} className="px-2.5 py-2 text-right font-bold tabular-nums">{cell(k, tot[k])}</td>)}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         );
       })()}
