@@ -213,10 +213,29 @@ function kickoffLocal(m, opts = {}) {
 const kickoffTimeLocal = (m) => new Date(kickoffMs(m)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
 /* ---------- data access (Supabase; shared across all users) ---------- */
+// Supabase caps a single select() at the project's "Max rows" limit (1,000 by default).
+// Once the pool passes that many slips/transactions, a plain select silently drops the
+// OLDEST rows — which corrupts wallet balances, My Picks and the settlement views.
+// This pages through the whole table in fixed windows so the app always loads every row,
+// regardless of the dashboard cap. Read-only; it never writes data.
+async function fetchAllRows(table, orderCol, ascending = false) {
+  const PAGE = 1000;
+  let from = 0, all = [];
+  for (;;) {
+    const { data, error } = await supabase
+      .from(table).select("*").order(orderCol, { ascending })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break; // last (short) page reached
+    from += PAGE;
+  }
+  return all;
+}
+
 const db = {
   async fetchBets() {
-    const { data, error } = await supabase.from("bets").select("*").order("placed_at", { ascending: false });
-    if (error) throw error;
+    const data = await fetchAllRows("bets", "placed_at", false);
     return (data || []).map((b) => ({
       id: b.id, code: b.code, user: b.nickname, userId: b.user_id, ts: b.placed_at,
       items: b.items, totalStake: Number(b.total_stake), potential: Number(b.potential),
@@ -291,9 +310,7 @@ const db = {
     if (error) throw error;
   },
   async fetchTransactions() {
-    const { data, error } = await supabase.from("transactions").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    return data || [];
+    return await fetchAllRows("transactions", "created_at", false);
   },
   async addTransaction(t, userId) {
     const { error } = await supabase.from("transactions")
