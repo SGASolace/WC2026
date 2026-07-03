@@ -2931,6 +2931,57 @@ function PlayersPanel({ players, bets, txns, creditPlayer, creditPlayerOg, reset
         <div><span className="font-bold text-emerald-300">15%</span> · 15,001–25,000</div>
         <div><span className="font-bold text-emerald-300">20%</span> · 25,001 &amp; above</div>
       </div>
+      {list.length > 0 && (() => {
+        const kindStake = (mine, k) => mine.filter((b) => (b.kind || "match") === k).reduce((a, b) => a + (b.totalStake || 0), 0);
+        const rows = list.map((p) => {
+          const mine = bets.filter((b) => b.userId === p.id);
+          const nonOg = mine.filter((b) => b.kind !== "outright");
+          const og = mine.filter((b) => b.kind === "outright");
+          let wl = 0, inb = 0;
+          mine.forEach((b) => (b.items || []).forEach((it) => { wl += itemPL(b, it); if (it.status === "open") inb += it.stake; }));
+          return {
+            p,
+            dep: Number(p.deposit || 0) + Number(p.og_deposit || 0),
+            bon: Number(p.bonus || 0) + Number(p.og_bonus || 0),
+            match: kindStake(mine, "match"), out: kindStake(mine, "outright"),
+            boost: kindStake(mine, "boost"), fan: kindStake(mine, "fantasy"),
+            wl, inb, net: walletOf(p, nonOg).net + walletOg(p, og).net,
+          };
+        }).sort((a, b) => b.net - a.net);
+        const tot = rows.reduce((a, r) => { ["dep", "bon", "match", "out", "boost", "fan", "wl", "inb", "net"].forEach((k) => (a[k] += r[k])); return a; },
+          { dep: 0, bon: 0, match: 0, out: 0, boost: 0, fan: 0, wl: 0, inb: 0, net: 0 });
+        const cls = (n) => (n >= 0 ? "text-emerald-300" : "text-rose-300");
+        const cols = [["dep", "Deposit"], ["bon", "Bonus"], ["match", "Match bets"], ["out", "Outright"], ["boost", "Boosts"], ["fan", "Fantasy"], ["wl", "Win/Loss"], ["inb", "In Bets"], ["net", "Net Bal"]];
+        const cell = (k, v) => k === "wl" ? <span className={`font-semibold ${cls(v)}`}>{signed(v)}</span>
+          : k === "net" ? <span className={`font-bold ${cls(v)}`}>{fmtN(v)}</span>
+          : k === "inb" ? <span className="text-amber-300">{fmtN(v)}</span>
+          : k === "bon" ? <span className="text-emerald-300/80">{fmtN(v)}</span>
+          : <span className="text-stone-200">{fmtN(v)}</span>;
+        return (
+          <div className="mb-4 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.02]">
+            <table className="w-full min-w-[720px] text-[11px]">
+              <thead>
+                <tr className="text-stone-400">
+                  <th className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-semibold">Player</th>
+                  {cols.map(([k, lbl]) => <th key={k} className="whitespace-nowrap px-2.5 py-2 text-right font-semibold">{lbl}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.p.id} className="border-t border-white/5">
+                    <td className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-semibold text-white"><span className="whitespace-nowrap">{r.p.nickname}</span></td>
+                    {cols.map(([k]) => <td key={k} className="px-2.5 py-2 text-right tabular-nums">{cell(k, r[k])}</td>)}
+                  </tr>
+                ))}
+                <tr className="border-t border-white/10 bg-white/[0.04]">
+                  <td className="sticky left-0 z-10 bg-[#0b0f0d] px-3 py-2 text-left font-bold text-stone-300">All players</td>
+                  {cols.map(([k]) => <td key={k} className="px-2.5 py-2 text-right font-bold tabular-nums">{cell(k, tot[k])}</td>)}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
       {list.length === 0 && <p className="py-10 text-center text-sm text-stone-500">No players have signed up yet.</p>}
       <div className="space-y-2.5">
         {list.map((p) => (
