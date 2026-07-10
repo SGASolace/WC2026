@@ -333,8 +333,18 @@ const db = {
 // default first/anytime odds ladder by squad position (defenders longer, forwards shorter)
 const FIRST_ODDS = ["12/1", "11/1", "10/1", "9/1", "8/1", "7/1", "6/1", "5/1", "9/2", "4/1"];
 const ANY_ODDS = ["6/1", "11/2", "5/1", "9/2", "4/1", "7/2", "3/1", "5/2", "9/4", "2/1"];
+// Resolve the canonical team key from a clean name OR a descriptive label containing one
+// (e.g. "Winner of 89 (Morocco)" → "Morocco"). Used for squads and auto-flag.
+function teamKeyFor(name) {
+  if (!name) return null;
+  if (SQUADS[name]) return name;
+  const low = String(name).toLowerCase();
+  return TEAM_NAMES.filter((t) => low.includes(t.toLowerCase())).sort((a, b) => b.length - a.length)[0] || null;
+}
+function squadFor(name) { const k = teamKeyFor(name); return k ? SQUADS[k] : null; }
+
 function defaultPlayers(team, side) {
-  const squad = SQUADS[team];
+  const squad = squadFor(team);
   if (squad && squad.length) {
     // seed the scorer markets with the 10 outfield starters (listed first); admin can add the rest from the dropdown
     return squad.slice(0, 10).map((name, i) => ({ name, first: FIRST_ODDS[i] || "12/1", any: ANY_ODDS[i] || "6/1" }));
@@ -3357,9 +3367,10 @@ function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, b
   const et = effTeams(match, config);
   const prev = results[match.n];
   const customSpecials = (config?.specials || []).filter((s) => (s.label || "").trim());
-  const squadHome = SQUADS[match.home] || [];
-  const squadAway = SQUADS[match.away] || [];
-  const squadSet = useMemo(() => new Set([...squadHome, ...squadAway]), [match]);
+  const cfgNames = (side) => (config?.players?.[side] || []).map((p) => p.name).filter(Boolean);
+  const squadHome = [...new Set([...cfgNames("home"), ...(squadFor(et.home) || [])])];
+  const squadAway = [...new Set([...cfgNames("away"), ...(squadFor(et.away) || [])])];
+  const squadSet = useMemo(() => new Set([...squadHome, ...squadAway]), [config, et.home, et.away]);
   const prevFirst = prev?.scorers?.[0] || "";
   const [r, setR] = useState(prev
     ? {
@@ -3707,9 +3718,10 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
   const [home, setHome] = useState(() => seedPlayers("home", teams.home));
   const [away, setAway] = useState(() => seedPlayers("away", teams.away));
   const changeTeam = (side, name) => {
-    const flag = TEAM_FLAGS[name] || (side === "home" ? teams.hf : teams.af);
+    const key = teamKeyFor(name);
+    const flag = TEAM_FLAGS[name] || (key ? TEAM_FLAGS[key] : "") || (side === "home" ? teams.hf : teams.af);
     setTeams((t) => ({ ...t, [side]: name, [side === "home" ? "hf" : "af"]: flag }));
-    if (SQUADS[name]) { side === "home" ? setHome(defaultPlayers(name, "home")) : setAway(defaultPlayers(name, "away")); }
+    if (key) { side === "home" ? setHome(defaultPlayers(name, "home")) : setAway(defaultPlayers(name, "away")); }
   };
   const [odds, setOdds] = useState(() => JSON.parse(JSON.stringify(config?.odds || {})));
   const [specials, setSpecials] = useState(() => (config?.specials || []).map((s) => ({ ...s })));
