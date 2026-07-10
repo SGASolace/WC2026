@@ -451,7 +451,12 @@ function buildMarkets(m, cfg = {}) {
   for (const mk of markets) {
     const extra = addLines[mk.key];
     if (!extra?.length) continue;
-    const sels = extra.map((a) => ({ id: a.id, label: a.label, oddsStr: a.oddsStr, odds: toDecimal(a.oddsStr), meta: a.meta }));
+    const sels = extra.map((a) => {
+      const sc = a.meta?.ft || a.meta?.ht;
+      const label = ((mk.key === "ft_score" || mk.key === "ht_score") && sc && sc !== "__OTHER__")
+        ? `${H} ${sc} ${A}` : a.label; // follow the current team names instead of a frozen label
+      return { id: a.id, label, oddsStr: a.oddsStr, odds: toDecimal(a.oddsStr), meta: a.meta };
+    });
     const oi = mk.selections.findIndex((s) => s.meta?.ht === "__OTHER__" || s.meta?.ft === "__OTHER__"); // keep "Other Score" last
     if (oi >= 0) mk.selections.splice(oi, 0, ...sels); else mk.selections.push(...sels);
   }
@@ -3458,8 +3463,8 @@ function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, b
         <AdminField label="First Goal Scorer">
           <select value={r.firstScorer} onChange={(e) => setR({ ...r, firstScorer: e.target.value })} className={ipt}>
             <option value="">— none / no goal —</option>
-            <optgroup label={match.home}>{squadHome.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
-            <optgroup label={match.away}>{squadAway.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <optgroup label={et.home}>{squadHome.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <optgroup label={et.away}>{squadAway.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
             <option value="__other__">Other (type a name)…</option>
           </select>
           {r.firstScorer === "__other__" && (
@@ -3470,8 +3475,8 @@ function SettleForm({ match, config, onBack, results, settleMatch, resetMatch, b
         <AdminField label="Add Anytime Goal Scorers">
           <select value="" onChange={(e) => { if (e.target.value) { addAnytime(e.target.value); e.target.value = ""; } }} className={ipt}>
             <option value="">Pick a player to add…</option>
-            <optgroup label={match.home}>{squadHome.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
-            <optgroup label={match.away}>{squadAway.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <optgroup label={et.home}>{squadHome.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
+            <optgroup label={et.away}>{squadAway.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>
           </select>
           <div className="mt-2 flex gap-2">
             <input value={anytimeText} onChange={(e) => setAnytimeText(e.target.value)}
@@ -3846,9 +3851,9 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         <MatchSpecialEditor mk={byKey.specials} odds={odds} setOdd={setOdd} offSet={offSet} toggleOff={toggleOff}
           specials={specials} addSpecial={addSpecial} setSpecial={setSpecial} delSpecial={delSpecial} />
         <OddsMarket mk={byKey.ht_score} odds={odds} setOdd={setOdd}
-          extra={<ScoreLineAdder label="Half-Time score" H={match.home} A={match.away} field="ht" mkey="ht_score" lines={addLines.ht_score} onAdd={addLine} onDel={delLine} />} />
+          extra={<ScoreLineAdder label="Half-Time score" H={teams.home} A={teams.away} field="ht" mkey="ht_score" lines={addLines.ht_score} onAdd={addLine} onDel={delLine} />} />
         <OddsMarket mk={byKey.ft_score} odds={odds} setOdd={setOdd}
-          extra={<ScoreLineAdder label="Full-Time score" H={match.home} A={match.away} field="ft" mkey="ft_score" lines={addLines.ft_score} onAdd={addLine} onDel={delLine} />} />
+          extra={<ScoreLineAdder label="Full-Time score" H={teams.home} A={teams.away} field="ft" mkey="ft_score" lines={addLines.ft_score} onAdd={addLine} onDel={delLine} />} />
         <OddsMarket mk={byKey.total_goals} odds={odds} setOdd={setOdd} offSet={offSet} onToggleOff={toggleOff}
           extra={<GoalsLineAdder lines={addLines.total_goals} onAdd={addLine} onDel={delLine} />} />
         <OddsMarket mk={byKey.first_goal_time} odds={odds} setOdd={setOdd} />
@@ -3866,8 +3871,8 @@ function ManageForm({ match, config, onBack, saveConfig, showToast }) {
         {scOpen && (
         <div className="border-t border-white/5 p-3">
         <p className="mb-2 text-[11px] text-stone-500">Add the squad names and set First / Anytime odds per player. The “Other Player” catch-all covers anyone not listed.</p>
-      {[["home", match.home, home], ["away", match.away, away]].map(([side, team, list]) => {
-        const squad = SQUADS[team] || [];
+      {[["home", teams.home, home], ["away", teams.away, away]].map(([side, team, list]) => {
+        const squad = squadFor(team) || [];
         return (
         <div key={side} className="mb-4">
           <div className="mb-2 flex items-center justify-between">
