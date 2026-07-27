@@ -1455,10 +1455,10 @@ function MatchList({ onOpen, results, configs, now, nickname, myBets = [] }) {
                         {myStake > 0 && <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-semibold text-emerald-300">In bets: {money(myStake)}</span>}
                       </div>
                       <div className="flex items-center gap-2 text-sm font-semibold">
-                        <ClubMark club={em.home} code={em.hf} /><span className="truncate">{em.home}</span>
+                        <span className="text-lg">{em.hf}</span><span className="truncate">{em.home}</span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold">
-                        <ClubMark club={em.away} code={em.af} /><span className="truncate">{em.away}</span>
+                        <span className="text-lg">{em.af}</span><span className="truncate">{em.away}</span>
                       </div>
                     </button>
                     <span className="flex shrink-0 items-center gap-1">
@@ -1544,53 +1544,9 @@ function MatchDetail({ match, config, onBack, slip, setSlip, results, showToast,
     </div>
   );
 }
-// Club crests, served from public/logos/. If a file is missing or fails to
-// load, the <img> hides itself and the code badge underneath shows instead —
-// so a lost file can never render as a broken-image icon.
-const TEAM_LOGOS = {
-  "Arsenal": "/logos/arsenal.png",
-  "Aston Villa": "/logos/aston-villa.png",
-  "Bournemouth": "/logos/bournemouth.png",
-  "Brentford": "/logos/brentford.png",
-  "Brighton": "/logos/brighton.png",
-  "Chelsea": "/logos/chelsea.png",
-  "Coventry": "/logos/coventry.png",
-  "Crystal Palace": "/logos/crystal-palace.png",
-  "Everton": "/logos/everton.png",
-  "Fulham": "/logos/fulham.png",
-  "Hull": "/logos/hull.png",
-  "Ipswich": "/logos/ipswich.png",
-  "Leeds": "/logos/leeds.png",
-  "Liverpool": "/logos/liverpool.png",
-  "Man City": "/logos/man-city.png",
-  "Man Utd": "/logos/man-utd.png",
-  "Newcastle": "/logos/newcastle.png",
-  "Nott'm Forest": "/logos/nottm-forest.png",
-  "Spurs": "/logos/spurs.png",
-  "Sunderland": "/logos/sunderland.png"
-};
-
-const ClubMark = ({ club, code, size = "h-6 w-6" }) => {
-  const src = TEAM_LOGOS[club];
-  if (!src) return <ClubCode code={code} />;
-  return (
-    <span className={`relative inline-flex ${size} shrink-0 items-center justify-center`}>
-      <span className="absolute inset-0 flex items-center justify-center rounded-md bg-violet-500/20 text-[9px] font-bold text-violet-300">{code}</span>
-      <img src={src} alt={club} loading="lazy" draggable="false"
-        className="relative h-full w-full object-contain"
-        onError={(e) => { e.currentTarget.style.display = "none"; }} />
-    </span>
-  );
-};
-
-// Club code badge — used when no crest exists (e.g. admin-added teams).
-const ClubCode = ({ code }) => (
-  <span className="inline-flex w-11 shrink-0 items-center justify-center rounded-md bg-violet-500/20 px-1 py-0.5 text-[10px] font-bold tracking-wide text-violet-300">{code}</span>
-);
-
 const Team = ({ flag, name }) => (
   <div className="flex w-24 flex-col items-center gap-1.5 text-center">
-    <ClubMark club={name} code={flag} size="h-14 w-14" />
+    <span className="text-4xl">{flag}</span>
     <span className="text-xs font-semibold leading-tight">{name}</span>
   </div>
 );
@@ -2458,9 +2414,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
   const o = agg(bets.filter((b) => b.kind === "outright"));
   const all = agg(bets);
   const settledMatches = Object.keys(results).filter((k) => +k > 0).length;
-  const totalMatches = FIXTURES.length;              // 380 for the league
-  const totalFmCats = FM_CATS.length;                // 11 fantasy months
-  const settledFmMd = Object.keys(results).filter((k) => FM_CATS.some((c) => c.mid === +k)).length;
+  const settledFmMd = Object.keys(results).filter((k) => +k <= -11 && +k >= -19).length;
   const liveMatches = FIXTURES.filter((mm) => configs?.[mm.n]?.live).length;
   const liveMatchStakes = bets.filter((b) => (b.kind || "match") === "match")
     .reduce((acc, b) => acc + b.items.reduce((s, it) => s + (configs?.[it.matchId]?.live && !results[it.matchId] ? it.stake : 0), 0), 0);
@@ -2468,11 +2422,11 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
   const totalBonus = players.reduce((a, p) => a + Number(p.bonus || 0) + Number(p.og_bonus || 0), 0);
   const pl = (x) => x.stake - x.payout;
   const STAT = {
-    settle: [["Players", nPlayers], ["Match Entries", m.n], ["Match Stakes", money(m.stake)], ["Match Payouts", money(m.payout), true], ["Settled Matches", `${settledMatches}/${totalMatches}`], ["Match Pool P/L", money(pl(m)), pl(m) >= 0]],
-    manage: [["Players", nPlayers], ["Live Matches", `${liveMatches}/${totalMatches}`], ["Draft (not live)", `${totalMatches - liveMatches}/${totalMatches}`], ["Settled Matches", `${settledMatches}/${totalMatches}`], ["Total Match Stakes", money(m.stake)], ["Live Match Stakes", money(liveMatchStakes)]],
+    settle: [["Players", nPlayers], ["Match Entries", m.n], ["Match Stakes", money(m.stake)], ["Match Payouts", money(m.payout), true], ["Settled Matches", `${settledMatches}/72`], ["Match Pool P/L", money(pl(m)), pl(m) >= 0]],
+    manage: [["Players", nPlayers], ["Live Matches", `${liveMatches}/72`], ["Draft (not live)", `${72 - liveMatches}/72`], ["Settled Matches", `${settledMatches}/72`], ["Total Match Stakes", money(m.stake)], ["Live Match Stakes", money(liveMatchStakes)]],
     outrights: [["Players", nPlayers], ["Outright Entries", o.n], ["Outright Stakes", money(o.stake)], ["Outright Payouts", money(o.payout), true], ["Winners Declared", results[-1] ? "Yes" : "No"], ["Outright Pool P/L", money(pl(o)), pl(o) >= 0]],
-    fantasy: [["Players", nPlayers], ["Fantasy Entries", f.n], ["Fantasy Stakes", money(f.stake)], ["Fantasy Payouts", money(f.payout), true], ["Settled Months", `${settledFmMd}/${totalFmCats}`], ["Fantasy Pool P/L", money(pl(f)), pl(f) >= 0]],
-    players: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Settled Matches", `${settledMatches}/${totalMatches}`], ["Settled Fantasy Months", `${settledFmMd}/${totalFmCats}`], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
+    fantasy: [["Players", nPlayers], ["Fantasy Entries", f.n], ["Fantasy Stakes", money(f.stake)], ["Fantasy Payouts", money(f.payout), true], ["Settled Matchdays", `${settledFmMd}/9`], ["Fantasy Pool P/L", money(pl(f)), pl(f) >= 0]],
+    players: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Settled Matches", `${settledMatches}/72`], ["Settled Fantasy MDs", `${settledFmMd}/9`], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
     void: [["Players", nPlayers], ["Total Slips", all.n], ["Open Slips", bets.filter((b) => b.status === "open").length], ["Voided Picks", bets.reduce((a, b) => a + b.items.filter((it) => it.status === "void").length, 0)]],
     profiles: [["Players", nPlayers], ["Total Deposit", money(totalDeposit)], ["Total Bonus", money(totalBonus)], ["In Bets", money(all.open)], ["Total Payouts", money(all.payout), true], ["Pool P/L", money(pl(all)), pl(all) >= 0]],
   };
@@ -2541,7 +2495,7 @@ function AdminPanel({ bets, results, configs, players, txns, settleMatch, resetM
               <BoostAdmin config={configs[-3]} bets={bets} saveConfig={saveConfig} showToast={showToast} />
               <button onClick={() => setQuick(true)}
                 className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 py-3 text-sm font-bold text-black">
-                ⚡ Quick 1X2 + Live — publish a gameweek in one screen
+                ⚡ Quick 1X2 + Live — set all 72 matches in one screen
               </button>
               <MatchPicker results={results} configs={configs} onPick={setPick} manage />
             </>
@@ -2656,7 +2610,7 @@ function VoidPanel({ bets, results, configs, voidPick, showToast }) {
     return (
       <div key={m.n} className="rounded-xl border border-white/10 bg-black/20 p-3">
         <div className="mb-2 text-xs font-bold">
-          {(() => { const e = effTeams(m, configs?.[m.n]); return `${e.home} v ${e.away}`; })()}
+          {(() => { const e = effTeams(m, configs?.[m.n]); return `${e.hf} ${e.home} v ${e.away} ${e.af}`; })()}
           <span className="ml-1.5 font-normal text-stone-500">{m.day} · {m.date.replace(/,?\s*20\d\d/, "")} · {m.time}</span>
         </div>
         <div className="space-y-1.5">
@@ -3414,7 +3368,7 @@ function MatchPicker({ results, configs, onPick, manage, bets }) {
     return (
       <div key={m.n} className="flex items-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
         <button onClick={() => onPick(m)} className="min-w-0 flex-1 text-left hover:text-emerald-300">
-          <div className="truncate">{(() => { const e = effTeams(m, configs?.[m.n]); return `${e.home} v ${e.away}`; })()}</div>
+          <div className="truncate">{(() => { const e = effTeams(m, configs?.[m.n]); return `${e.hf} ${e.home} v ${e.away} ${e.af}`; })()}</div>
           <div className="text-[10px] text-stone-500">
             {m.day} · {m.date.replace(/,?\s*20\d\d/, "")} · {m.time}
             {settled && !manage ? ` · ${settled.ft.h}–${settled.ft.a}` : ""}
